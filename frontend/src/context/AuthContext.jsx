@@ -47,7 +47,17 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const handleExpired = (e) => {
       const detail = e.detail || {};
-      setSessionErrorMessage(detail.error || 'Session expired. Please log in.');
+      let msg = 'Session expired. Please log in.';
+      if (typeof detail.error === 'string') {
+        msg = detail.error;
+      } else if (typeof detail.message === 'string') {
+        msg = detail.message;
+      } else if (typeof detail.error?.message === 'string') {
+        msg = detail.error.message;
+      } else if (typeof detail === 'string') {
+        msg = detail;
+      }
+      setSessionErrorMessage(String(msg));
       logout();
     };
     window.addEventListener('memotrix_session_expired', handleExpired);

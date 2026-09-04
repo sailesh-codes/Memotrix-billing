@@ -65,16 +65,24 @@ if (fs.existsSync(assetsDir)) {
 
 app.use('/api/', apiLimiter);
 
-app.use('/api/health', healthRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/bills', billRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/settings', settingRoutes);
-app.use('/api/coupons', couponRoutes);
-app.use('/api/discount-rules', discountRuleRoutes);
+// Support both /api/path and /path in case of Vercel service rewrite prefix stripping
+const routeMappings = [
+  ['health', healthRoutes],
+  ['auth', authRoutes],
+  ['products', productRoutes],
+  ['customers', customerRoutes],
+  ['bills', billRoutes],
+  ['inventory', inventoryRoutes],
+  ['reports', reportRoutes],
+  ['settings', settingRoutes],
+  ['coupons', couponRoutes],
+  ['discount-rules', discountRuleRoutes]
+];
+
+routeMappings.forEach(([pathSegment, handler]) => {
+  app.use(`/api/${pathSegment}`, handler);
+  app.use(`/${pathSegment}`, handler);
+});
 
 app.get('/', (req, res) => {
   res.json({

@@ -26,7 +26,16 @@ export function LoginForm() {
       }
       login(res.data.token, res.data.user);
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid username or password.');
+      const errPayload = err.response?.data?.error || err.response?.data;
+      let errorMsg = 'Invalid username or password.';
+      if (typeof errPayload === 'string') {
+        errorMsg = errPayload;
+      } else if (errPayload && typeof errPayload === 'object') {
+        errorMsg = errPayload.message || errPayload.error || JSON.stringify(errPayload);
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      setError(String(errorMsg));
     } finally {
       setLoading(false);
     }
@@ -52,14 +61,22 @@ export function LoginForm() {
         {sessionErrorMessage && (
           <div className="p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs rounded-2xl flex items-center">
             <AlertCircle className="w-4 h-4 mr-2.5 flex-shrink-0 text-rose-500" />
-            {sessionErrorMessage}
+            <span>
+              {typeof sessionErrorMessage === 'object'
+                ? (sessionErrorMessage.message || sessionErrorMessage.error || JSON.stringify(sessionErrorMessage))
+                : String(sessionErrorMessage)}
+            </span>
           </div>
         )}
 
         {error && (
           <div className="p-3.5 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300 text-xs rounded-2xl flex items-start">
             <AlertCircle className="w-4 h-4 mr-2.5 mt-0.5 flex-shrink-0 text-amber-600" />
-            <span>{error}</span>
+            <span>
+              {typeof error === 'object'
+                ? (error.message || error.error || JSON.stringify(error))
+                : String(error)}
+            </span>
           </div>
         )}
 

@@ -203,7 +203,7 @@ export function InvoicesPage() {
               Voiding this invoice will restore all stock items and mark the status as VOID. Action requires admin password re-entry and a reason.
             </p>
 
-            {voidError && <p className="text-xs text-red-600 mb-3">{voidError}</p>}
+            {voidError && <p className="text-xs text-red-600 mb-3">{typeof voidError === 'object' ? (voidError.message || JSON.stringify(voidError)) : String(voidError)}</p>}
 
             <form onSubmit={handleVoidSubmit} className="space-y-3">
               <div>

@@ -306,7 +306,7 @@ export function InvoiceForm({ onInvoiceCreated }) {
               Apply
             </button>
           </div>
-          {couponError && <p className="text-xs text-red-600 mt-1">{couponError}</p>}
+          {couponError && <p className="text-xs text-red-600 mt-1">{typeof couponError === 'object' ? (couponError.message || JSON.stringify(couponError)) : String(couponError)}</p>}
           {coupon && (
             <p className="text-xs text-green-700 font-bold mt-1">
               ✓ Coupon '{coupon.code}' Applied!

@@ -254,7 +254,7 @@ export function CustomersPage() {
               </button>
             </div>
 
-            {error && <p className="text-xs text-rose-600 font-bold">{error}</p>}
+            {error && <p className="text-xs text-rose-600 font-bold">{typeof error === 'object' ? (error.message || JSON.stringify(error)) : String(error)}</p>}
 
             <form onSubmit={handleCreateCustomer} className="space-y-3">
               <div>

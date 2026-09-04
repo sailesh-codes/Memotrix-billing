@@ -6,9 +6,13 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const showToast = useCallback((message, type = 'info', duration = 4000) => {
+  const showToast = useCallback((rawMessage, type = 'info', duration = 4000) => {
+    let message = rawMessage;
+    if (typeof rawMessage === 'object' && rawMessage !== null) {
+      message = rawMessage.message || rawMessage.error || JSON.stringify(rawMessage);
+    }
     const id = Date.now() + Math.random();
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => [...prev, { id, message: String(message), type }]);
 
     setTimeout(() => {
       removeToast(id);
@@ -52,7 +56,11 @@ export function ToastProvider({ children }) {
               {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0" />}
               {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />}
               {toast.type === 'info' && <Info className="w-5 h-5 text-blue-400 flex-shrink-0" />}
-              <span className="text-xs font-medium leading-tight">{toast.message}</span>
+              <span className="text-xs font-medium leading-tight">
+                {typeof toast.message === 'object'
+                  ? (toast.message?.message || toast.message?.error || JSON.stringify(toast.message))
+                  : String(toast.message)}
+              </span>
             </div>
             <button
               onClick={() => removeToast(toast.id)}
