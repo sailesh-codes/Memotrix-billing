@@ -36,8 +36,8 @@ if (process.env.SENTRY_DSN) {
 }
 
 configureSecurity(app);
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 const publicDir = path.join(process.cwd(), 'public');
 const assetsDir = path.join(__dirname, '..', 'assets');
@@ -45,9 +45,10 @@ const uploadsDir = path.join(publicDir, 'uploads');
 
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-app.use(express.static(publicDir));
-app.use('/assets', express.static(assetsDir));
-app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png')));
+const staticOptions = { dotfiles: 'ignore', index: false };
+app.use(express.static(publicDir, staticOptions));
+app.use('/assets', express.static(assetsDir, staticOptions));
+app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png'), staticOptions));
 
 app.use('/api/', apiLimiter);
 
@@ -72,9 +73,13 @@ app.get('/', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  winstonLogger.error('Unhandled Server Error:', err);
+  winstonLogger.error('Unhandled Server Error:', { message: err.message, status: err.status });
   if (process.env.SENTRY_DSN) Sentry.captureException(err);
-  res.status(500).json({ error: err.message || 'Internal Server Error' });
+  const statusCode = err.status || err.statusCode || 500;
+  const clientMessage = (statusCode < 500 && err.message)
+    ? err.message
+    : 'Internal Server Error';
+  res.status(statusCode).json({ error: clientMessage });
 });
 
 async function startServer() {

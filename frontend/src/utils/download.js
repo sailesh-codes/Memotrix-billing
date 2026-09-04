@@ -14,7 +14,6 @@ export async function downloadAuthenticatedFile(url, defaultFilename) {
       cleanPath = cleanPath.substring(4); // Remove leading '/api'
     }
 
-    console.log(`[DOWNLOAD] Initiating authenticated file download for: ${cleanPath} (resolved via Axios baseURL '/api')`);
     const response = await api.get(cleanPath, { responseType: 'blob' });
 
     // Validate that response is a binary file blob
@@ -30,8 +29,6 @@ export async function downloadAuthenticatedFile(url, defaultFilename) {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(blobUrl);
-
-    console.log(`[DOWNLOAD] Download completed successfully for: ${defaultFilename}`);
   } catch (err) {
     let statusCode = err.response?.status || 'Network Error';
     let serverErrorMessage = 'Failed to download file. Please check server logs.';
@@ -40,13 +37,12 @@ export async function downloadAuthenticatedFile(url, defaultFilename) {
     if (err.response?.data && err.response.data instanceof Blob) {
       try {
         const errorText = await err.response.data.text();
-        console.error(`[DOWNLOAD ERROR] HTTP ${statusCode} Raw Response Body:`, errorText);
         const parsed = JSON.parse(errorText);
         if (parsed && parsed.error) {
           serverErrorMessage = parsed.error;
         }
       } catch (e) {
-        console.error('[DOWNLOAD ERROR] Could not parse Blob error response text:', e);
+        // parsing fallback
       }
     } else if (err.response?.data?.error) {
       serverErrorMessage = err.response.data.error;
@@ -54,10 +50,8 @@ export async function downloadAuthenticatedFile(url, defaultFilename) {
       serverErrorMessage = err.message;
     }
 
-    console.error(`[DOWNLOAD FAILED] Path: ${url} | HTTP Status: ${statusCode} | Message: ${serverErrorMessage}`);
-    
     window.dispatchEvent(new CustomEvent('memotrix_toast', { 
-      detail: { message: `Download Failed (HTTP ${statusCode}): ${serverErrorMessage}`, type: 'error' } 
+      detail: { message: `Download Failed (${statusCode}): ${serverErrorMessage}`, type: 'error' } 
     }));
   }
 }

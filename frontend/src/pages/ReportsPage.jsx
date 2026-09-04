@@ -16,7 +16,6 @@ export function ReportsPage() {
 
   // Analyze Action: Fetches and processes analytics metrics for presentation
   const handleAnalyzeReports = async () => {
-    console.log('[ACTION] Analyze Reports triggered: Fetching performance analytics...');
     setLoading(true);
     try {
       const tsRes = await reportsApi.getTopSellers();
@@ -28,7 +27,7 @@ export function ReportsPage() {
       const recRes = await reportsApi.getReconciliation();
       setReconciliation(recRes.data.paymentMethods || []);
     } catch (e) {
-      console.error('[ANALYZE] Error fetching reports:', e);
+      // Handled silently
     } finally {
       setLoading(false);
     }
@@ -36,7 +35,6 @@ export function ReportsPage() {
 
   // Download Action: Triggers authenticated Excel file download
   const handleDownloadExcel = () => {
-    console.log('[ACTION] Download Excel triggered: Downloading Memotrix_Sales_Report.xlsx...');
     const url = reportsApi.getExcelExportUrl();
     downloadAuthenticatedFile(url, 'Memotrix_Sales_Report.xlsx');
   };

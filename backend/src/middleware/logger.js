@@ -1,10 +1,30 @@
 import winston from 'winston';
 import db from '../db/db.js';
 
+const SENSITIVE_FIELDS = ['password', 'token', 'secret', 'authorization', 'jwt', 'bearer', 'cookie'];
+
+const maskSensitiveData = winston.format((info) => {
+  const mask = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (const key of Object.keys(obj)) {
+      const lower = key.toLowerCase();
+      if (SENSITIVE_FIELDS.some(f => lower.includes(f))) {
+        obj[key] = '[REDACTED]';
+      } else if (typeof obj[key] === 'object') {
+        mask(obj[key]);
+      }
+    }
+    return obj;
+  };
+
+  return mask(info);
+});
+
 export const winstonLogger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
+    maskSensitiveData(),
     winston.format.json()
   ),
   transports: [

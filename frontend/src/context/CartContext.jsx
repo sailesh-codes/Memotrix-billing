@@ -88,7 +88,6 @@ export function CartProvider({ children }) {
       if (draft.lineItems.length > 0 || draft.newCustomerName || draft.selectedCustomer) {
         try {
           await billsApi.saveDraft(draft);
-          console.log('[DRAFT] Synced draft to backend server.');
         } catch (err) {
           // ignore background sync errors
         }

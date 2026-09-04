@@ -3,18 +3,20 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import db from '../db/db.js';
 import { generateToken, authenticate } from '../middleware/auth.js';
+import { loginLimiter } from '../middleware/rateLimiter.js';
 import { logLoginAttempt } from '../middleware/logger.js';
 import { logAccountSecurityEvent } from '../services/securityLogger.js';
 
 const router = express.Router();
 
 const FIXED_ADMIN_EMAIL = 'teammemotrix@gmail.com';
+const DUMMY_HASH = '$2a$12$e8V/C53Fj6wWz97Ew.NfTezJ27F6D48gE/yO2VvJ.1J5E31DqFmve';
 
 /**
  * POST /api/auth/login
- * Single-Factor Authentication (Username + Password)
+ * Single-Factor Authentication (Username + Password) with strict rate limiting & timing protection
  */
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
   const userAgent = req.headers['user-agent'] || 'Unknown';
@@ -26,26 +28,24 @@ router.post('/login', async (req, res) => {
   try {
     const user = await db.queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [username, username]);
 
-    if (!user) {
-      await logLoginAttempt({ userId: null, ipAddress, userAgent, status: 'failure_password' });
-      await logAccountSecurityEvent({ userId: null, eventType: 'LOGIN_FAILURE', ipAddress, userAgent, metadata: { reason: 'user_not_found' } });
+    // Constant-time password check prevents username enumeration timing attacks
+    const targetHash = user ? user.password_hash : DUMMY_HASH;
+    const isPasswordValid = bcrypt.compareSync(password, targetHash);
+
+    if (!user || !isPasswordValid) {
+      await logLoginAttempt({ userId: user?.id || null, ipAddress, userAgent, status: 'failure_password' });
+      await logAccountSecurityEvent({ 
+        userId: user?.id || null, 
+        eventType: 'LOGIN_FAILURE', 
+        ipAddress, 
+        userAgent, 
+        metadata: { reason: user ? 'wrong_password' : 'user_not_found' } 
+      });
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
-    if (!isPasswordValid) {
-      await logLoginAttempt({ userId: user.id, ipAddress, userAgent, status: 'failure_password' });
-      await logAccountSecurityEvent({ userId: user.id, eventType: 'LOGIN_FAILURE', ipAddress, userAgent, metadata: { reason: 'wrong_password' } });
-      return res.status(401).json({ error: 'Invalid username or password.' });
-    }
-
-    // Check Single Active Session Enforcement
-    const existingSession = user.active_session_token;
+    // Single Active Session Enforcement
     const newSessionToken = crypto.randomBytes(32).toString('hex');
-
-    if (existingSession) {
-      console.log(`[AUTH] Terminating previous session for admin ${user.username}`);
-    }
 
     await db.query('UPDATE users SET active_session_token = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [newSessionToken, user.id]);
 

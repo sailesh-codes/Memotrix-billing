@@ -33,13 +33,11 @@ export function InvoicesPage() {
   };
 
   const handleAnalyzeInvoice = (bill) => {
-    console.log('[ACTION] Analyze/View Invoice clicked for bill:', bill.bill_number);
     navigate(`/invoices/${bill.id}`);
   };
 
   const handleDownloadInvoice = (bill, e) => {
     e.stopPropagation();
-    console.log('[ACTION] Download PDF Invoice clicked for bill:', bill.bill_number);
     const url = billsApi.getPdfUrl(bill.id);
     downloadAuthenticatedFile(url, `${bill.bill_number}.pdf`);
   };

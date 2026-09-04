@@ -187,14 +187,10 @@ export function SettingsPage() {
     showToast('Uploading original high-resolution logo...', 'info');
 
     try {
-      console.log('[LOGO UPLOAD STEP 1] Preparing FormData for file:', file.name, file.type, file.size);
       const formData = new FormData();
       formData.append('logo', file);
 
-      console.log('[LOGO UPLOAD STEP 2] Sending FormData to /api/settings/upload-logo...');
       const res = await settingsApi.uploadLogo(formData);
-      console.log('[LOGO UPLOAD STEP 3] Upload response:', res.data);
-
       const newLogoUrl = res.data.logoUrl || res.data.logoOriginalUrl || res.data.logo_url;
 
       setLogoUrl(newLogoUrl);
@@ -203,14 +199,10 @@ export function SettingsPage() {
       setLogoX(0.0);
       setLogoY(0.0);
 
-      console.log('[LOGO UPLOAD STEP 4] Refreshing business profile settings...');
       await refreshSettings();
-
-      console.log('[LOGO UPLOAD SUCCESS] Logo updated successfully to:', newLogoUrl);
       showToast('Logo Updated Successfully.', 'success');
       setIsAdjustModalOpen(true);
     } catch (err) {
-      console.error('[LOGO UPLOAD ERROR] Exception details:', err);
       showToast(err.response?.data?.error || err.message || 'Failed to upload logo.', 'error');
     } finally {
       setIsUploadingLogo(false);

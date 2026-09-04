@@ -2,7 +2,6 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { buildUpiString, generateQrDataUri } from '../services/qrService.js';
@@ -235,10 +234,8 @@ router.put('/feature-flags', async (req, res) => {
 const handleLogoUpload = (req, res) => {
   upload.single('logo')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-      console.error('[LOGO UPLOAD] Multer error:', err);
       return res.status(400).json({ success: false, error: `Upload error: ${err.message}` });
     } else if (err) {
-      console.error('[LOGO UPLOAD] Upload error:', err);
       return res.status(400).json({ success: false, error: err.message || 'Failed to upload logo' });
     }
 
@@ -263,10 +260,8 @@ const handleLogoUpload = (req, res) => {
       }
       await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
 
-      console.log(`[LOGO UPLOAD] Saved lossless original logo & invalidated PDF cache: ${logoUrl}`);
       return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl, logoOriginalUrl: logoUrl });
     } catch (dbErr) {
-      console.error('[LOGO UPLOAD] Database update error:', dbErr);
       return res.status(500).json({ success: false, error: 'Failed to save logo in database. Please try again.' });
     }
   });

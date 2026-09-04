@@ -33,7 +33,6 @@ export function InvoiceDetailsPage() {
   };
 
   const handleDownloadPdf = () => {
-    console.log('[ACTION] Download PDF clicked for invoice:', id);
     const url = billsApi.getPdfUrl(id);
     const filename = data?.bill?.bill_number ? `${data.bill.bill_number}.pdf` : `Invoice_${id}.pdf`;
     downloadAuthenticatedFile(url, filename);
