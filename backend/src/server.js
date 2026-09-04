@@ -54,8 +54,9 @@ const staticOptions = { dotfiles: 'ignore', index: false };
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir, staticOptions));
 }
-if (isVercel && fs.existsSync(uploadsDir)) {
+if (fs.existsSync(uploadsDir)) {
   app.use('/uploads', express.static(uploadsDir, staticOptions));
+  app.use('/api/uploads', express.static(uploadsDir, staticOptions));
 }
 if (fs.existsSync(assetsDir)) {
   app.use('/assets', express.static(assetsDir, staticOptions));
