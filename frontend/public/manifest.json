@@ -1,0 +1,20 @@
+{
+  "short_name": "Memotrix",
+  "name": "Memotrix POS & Receipt Generator",
+  "icons": [
+    {
+      "src": "logo-default.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "logo-default.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#0B8A3E",
+  "display": "standalone"
+}

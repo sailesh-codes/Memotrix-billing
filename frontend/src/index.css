@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-page: #F8FAFC;
+    --bg-sidebar: #FFFFFF;
+    --bg-navbar: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-input: #F1F5F9;
+    --border-color: #CBD5E1;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #64748B;
+    --accent-color: #2563EB;
+  }
+
+  .dark {
+    --bg-page: #111827;
+    --bg-sidebar: #1F2937;
+    --bg-navbar: #1E293B;
+    --bg-card: #1F2937;
+    --bg-input: #334155;
+    --border-color: #475569;
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --text-muted: #94A3B8;
+    --accent-color: #3B82F6;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    @apply bg-slate-50 text-slate-900 transition-colors duration-200 dark:bg-[#111827] dark:text-[#F8FAFC];
+  }
+}
+
+/* Form Input & Select High Contrast System */
+.form-input {
+  @apply bg-[#F8FAFC] dark:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] placeholder-[#64748B] dark:placeholder-[#94A3B8] border border-[#CBD5E1] dark:border-[#475569] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563EB] dark:focus:border-[#3B82F6] outline-none transition duration-150 font-medium disabled:opacity-60 disabled:cursor-not-allowed;
+}
+
+.form-select {
+  @apply bg-[#F8FAFC] dark:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] border border-[#CBD5E1] dark:border-[#475569] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563EB] dark:focus:border-[#3B82F6] outline-none transition duration-150 font-medium cursor-pointer;
+}
+
+.form-select option {
+  @apply bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F8FAFC] font-medium py-1;
+}
+
+/* Glassmorphism & UI Card Utilities */
+.card {
+  @apply bg-white dark:bg-[#1F2937] rounded-2xl border border-slate-200 dark:border-[#475569] p-6 shadow-sm hover:shadow-md transition-all duration-200;
+}
+
+.glass-panel {
+  @apply bg-white/90 dark:bg-[#1F2937]/90 backdrop-blur-xl border border-slate-200/80 dark:border-[#475569] shadow-sm transition-all duration-200;
+}
+
+.glass-card {
+  @apply bg-white dark:bg-[#1F2937] rounded-2xl border border-slate-200 dark:border-[#475569] shadow-sm hover:shadow-md transition-all duration-200;
+}
+
+.btn-primary {
+  @apply py-2.5 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 dark:from-blue-500 dark:to-indigo-600 dark:hover:from-blue-600 dark:hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/35 transition-all duration-200 flex items-center justify-center space-x-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+/* Print Optimization CSS for A4 Tax Invoice */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide app navigation chrome */
+  header, nav, aside, .no-print, button, .sidebar-container {
+    display: none !important;
+  }
+
+  .print-area {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}

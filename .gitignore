@@ -1,0 +1,95 @@
+# ==========================================
+# Memotrix Billing App - .gitignore
+# ==========================================
+
+# Dependencies
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# Testing and Coverage
+coverage/
+*.lcov
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+
+# Production & Build Artifacts
+dist/
+*/dist/
+build/
+*/build/
+out/
+.vite/
+*/.vite/
+.cache/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+*.pem
+*.key
+*.cert
+
+# Database & SQLite Data
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
+backend/src/db/*.sqlite
+backend/src/db/*.sqlite-journal
+
+# Uploads, Generated Storage & Backups
+backend/storage/pdfs/*
+!backend/storage/pdfs/.gitkeep
+backend/storage/backups/*
+!backend/storage/backups/.gitkeep
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep
+backend/backups/
+storage/backups/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDE & Editor Configurations
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local Runner Wrappers
+powershell.exe
+powershell.bat
+powershell.cmd
