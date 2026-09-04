@@ -39,8 +39,13 @@ export function configureSecurity(app) {
       origin: (origin, callback) => {
         if (!origin) return callback(null, true);
 
-        // Allow any localhost port in development
-        if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        // Allow any localhost port
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+          return callback(null, true);
+        }
+
+        // Allow any Vercel domain (*.vercel.app)
+        if (origin.endsWith('.vercel.app') || origin === 'https://vercel.app') {
           return callback(null, true);
         }
 

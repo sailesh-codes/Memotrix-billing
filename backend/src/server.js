@@ -30,6 +30,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+app.set('trust proxy', 1);
+
 if (process.env.SENTRY_DSN) {
   Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'development' });
   console.log('[SENTRY] Initialized backend error tracking');
@@ -38,6 +40,36 @@ if (process.env.SENTRY_DSN) {
 configureSecurity(app);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// Lazy DB initialization to safely initialize schema and seed data on serverless cold start
+let isDbReady = false;
+let dbInitPromise = null;
+
+export async function ensureDatabaseReady() {
+  if (isDbReady) return;
+  if (!dbInitPromise) {
+    dbInitPromise = seedDatabase()
+      .then(() => {
+        isDbReady = true;
+        console.log('[DB] Database seeded and ready');
+      })
+      .catch((err) => {
+        console.error('[DB] Seeding failed:', err);
+        dbInitPromise = null;
+        throw err;
+      });
+  }
+  return dbInitPromise;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await ensureDatabaseReady();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 const isVercel = !!process.env.VERCEL;
 const publicDir = path.join(process.cwd(), 'public');
@@ -105,8 +137,10 @@ app.use((err, req, res, next) => {
 
 export async function startServer() {
   try {
-    await seedDatabase();
-    initScheduler();
+    await ensureDatabaseReady();
+    if (!process.env.VERCEL) {
+      initScheduler();
+    }
 
     app.listen(PORT, () => {
       console.log(`=======================================================`);
@@ -122,6 +156,6 @@ export async function startServer() {
 
 export default app;
 
-if (process.env.NODE_ENV !== 'test') {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
   startServer();
 }

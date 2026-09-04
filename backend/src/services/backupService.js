@@ -5,9 +5,14 @@ import AWS from 'aws-sdk';
 import db from '../db/db.js';
 import { sendBackupReport } from './emailService.js';
 
-const BACKUP_DIR = process.env.BACKUP_LOCAL_DIR || path.join(process.cwd(), 'backups');
-if (!fs.existsSync(BACKUP_DIR)) {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+const isVercel = !!process.env.VERCEL;
+const BACKUP_DIR = process.env.BACKUP_LOCAL_DIR || (isVercel ? path.join('/tmp', 'backups') : path.join(process.cwd(), 'backups'));
+try {
+  if (!fs.existsSync(BACKUP_DIR)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  }
+} catch (e) {
+  // Ignored in read-only environments
 }
 
 const BACKUP_KEY = process.env.BACKUP_ENCRYPTION_KEY || 'memotrix_backup_secret_key_32b!';

@@ -3,6 +3,7 @@ import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { schemaSql } from './schemaSql.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,8 +84,13 @@ export async function queryOne(sql, params = []) {
  * Initialize Schema from schema.sql
  */
 export async function initDb() {
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  const sql = fs.readFileSync(schemaPath, 'utf8');
+  let sql = schemaSql;
+  if (!sql) {
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      sql = fs.readFileSync(schemaPath, 'utf8');
+    }
+  }
 
   if (isPg) {
     await pgPool.query(sql);

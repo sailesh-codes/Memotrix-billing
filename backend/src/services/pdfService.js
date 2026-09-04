@@ -1,9 +1,8 @@
-import { chromium } from 'playwright';
-
 let browserInstance = null;
 
 async function getBrowser() {
   if (!browserInstance) {
+    const { chromium } = await import('playwright');
     browserInstance = await chromium.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
