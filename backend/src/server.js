@@ -39,16 +39,28 @@ configureSecurity(app);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+const isVercel = !!process.env.VERCEL;
 const publicDir = path.join(process.cwd(), 'public');
 const assetsDir = path.join(__dirname, '..', 'assets');
-const uploadsDir = path.join(publicDir, 'uploads');
+const uploadsDir = isVercel ? path.join('/tmp', 'uploads') : path.join(publicDir, 'uploads');
 
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(uploadsDir)) {
+  try {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  } catch (e) {}
+}
 
 const staticOptions = { dotfiles: 'ignore', index: false };
-app.use(express.static(publicDir, staticOptions));
-app.use('/assets', express.static(assetsDir, staticOptions));
-app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png'), staticOptions));
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir, staticOptions));
+}
+if (isVercel && fs.existsSync(uploadsDir)) {
+  app.use('/uploads', express.static(uploadsDir, staticOptions));
+}
+if (fs.existsSync(assetsDir)) {
+  app.use('/assets', express.static(assetsDir, staticOptions));
+  app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png'), staticOptions));
+}
 
 app.use('/api/', apiLimiter);
 
@@ -82,7 +94,7 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({ error: clientMessage });
 });
 
-async function startServer() {
+export async function startServer() {
   try {
     await seedDatabase();
     initScheduler();
@@ -99,4 +111,8 @@ async function startServer() {
   }
 }
 
-startServer();
+export default app;
+
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
+  startServer();
+}

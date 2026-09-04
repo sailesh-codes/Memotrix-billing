@@ -12,9 +12,12 @@ import { encrypt, decrypt } from '../services/cryptoService.js';
 
 const router = express.Router();
 
-const PDF_STORAGE_DIR = path.join(process.cwd(), 'storage', 'pdfs');
+const isVercel = !!process.env.VERCEL;
+const PDF_STORAGE_DIR = isVercel ? path.join('/tmp', 'pdfs') : path.join(process.cwd(), 'storage', 'pdfs');
 if (!fs.existsSync(PDF_STORAGE_DIR)) {
-  fs.mkdirSync(PDF_STORAGE_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(PDF_STORAGE_DIR, { recursive: true });
+  } catch (e) {}
 }
 
 router.use(authenticate);

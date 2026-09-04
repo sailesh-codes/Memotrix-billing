@@ -11,7 +11,10 @@ let isPg = false;
 let pgPool = null;
 let sqliteDb = null;
 
-const dbPath = process.env.SQLITE_DB_PATH || path.join(__dirname, 'memotrix.sqlite');
+const defaultSqlitePath = process.env.VERCEL
+  ? path.join('/tmp', 'memotrix.sqlite')
+  : path.join(__dirname, 'memotrix.sqlite');
+const dbPath = process.env.SQLITE_DB_PATH || defaultSqlitePath;
 
 if (process.env.DATABASE_URL || process.env.PGHOST) {
   isPg = true;
