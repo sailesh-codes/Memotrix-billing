@@ -1,7 +1,18 @@
 import jwt from 'jsonwebtoken';
 import db from '../db/db.js';
+import config from '../config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'memotrix_jwt_secret_key_2026!';
+function getJwtSecret() {
+  const secret = config.jwtSecret || process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[AUTH FATAL] JWT_SECRET is required in production environment.');
+    }
+    return 'memotrix_dev_jwt_secret_key_2026!';
+  }
+  return secret;
+}
+
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 export function authenticate(req, res, next) {
@@ -12,7 +23,7 @@ export function authenticate(req, res, next) {
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     req.user = decoded;
 
     db.queryOne('SELECT * FROM users WHERE id = ?', [decoded.id])
@@ -76,7 +87,7 @@ export function generateToken(user, sessionToken) {
       sessionToken,
       lastActivity: Date.now()
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '8h' }
   );
 }

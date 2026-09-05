@@ -30,17 +30,34 @@ export function configureSecurity(app) {
   );
 
   // 2. CORS configuration
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'http://localhost:5000'];
+  const envAllowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  const defaultAllowedOrigins = [
+    'https://www.memotrix.in',
+    'https://memotrix.in',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'http://localhost:5000'
+  ];
+
+  const allowedOriginsSet = new Set([...defaultAllowedOrigins, ...envAllowedOrigins]);
 
   app.use(
     cors({
       origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
         if (!origin) return callback(null, true);
 
         // Allow any localhost port
         if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+          return callback(null, true);
+        }
+
+        // Allow official Memotrix domain and any subdomains
+        if (/^https?:\/\/([a-zA-Z0-9-]+\.)*memotrix\.in$/.test(origin)) {
           return callback(null, true);
         }
 
@@ -49,11 +66,12 @@ export function configureSecurity(app) {
           return callback(null, true);
         }
 
-        if (allowedOrigins.includes(origin)) {
+        if (allowedOriginsSet.has(origin)) {
           return callback(null, true);
         }
 
-        callback(new Error('Blocked by CORS policy'));
+        // Gracefully disallow origin without throwing an unhandled exception
+        return callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

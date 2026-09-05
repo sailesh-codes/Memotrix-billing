@@ -1,7 +1,7 @@
+import './config.js';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
 import { fileURLToPath } from 'url';
 
@@ -21,8 +21,6 @@ import settingRoutes from './routes/settings.js';
 import couponRoutes from './routes/coupons.js';
 import discountRuleRoutes from './routes/discountRules.js';
 import healthRoutes from './routes/health.js';
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

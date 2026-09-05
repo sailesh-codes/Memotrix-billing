@@ -26,16 +26,34 @@ export function LoginForm() {
       }
       login(res.data.token, res.data.user);
     } catch (err) {
-      const errPayload = err.response?.data?.error || err.response?.data;
-      let errorMsg = 'Invalid username or password.';
-      if (typeof errPayload === 'string') {
-        errorMsg = errPayload;
-      } else if (errPayload && typeof errPayload === 'object') {
-        errorMsg = errPayload.message || errPayload.error || JSON.stringify(errPayload);
-      } else if (err.message) {
-        errorMsg = err.message;
+      if (!err.response) {
+        if (err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')) {
+          setError('Connection timed out. Please check your network and try again.');
+        } else {
+          setError('Unable to connect to the server. Please check your network connection.');
+        }
+        return;
       }
-      setError(String(errorMsg));
+
+      const status = err.response.status;
+      const data = err.response.data;
+      const serverMsg = typeof data === 'string' ? data : (data?.error || data?.message);
+
+      if (status === 400) {
+        setError(serverMsg || 'Please provide both username/email and password.');
+      } else if (status === 401) {
+        setError(serverMsg || 'Invalid email or password.');
+      } else if (status === 403) {
+        setError(serverMsg || 'Access denied. Administrator privileges required.');
+      } else if (status === 404) {
+        setError('Authentication service not found.');
+      } else if (status === 429) {
+        setError('Too many login attempts. Please wait 15 minutes before trying again.');
+      } else if (status >= 500) {
+        setError('Authentication service temporarily unavailable. Please try again.');
+      } else {
+        setError(serverMsg || 'An unexpected error occurred during login. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

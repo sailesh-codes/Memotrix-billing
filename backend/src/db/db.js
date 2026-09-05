@@ -29,16 +29,43 @@ if (process.env.DATABASE_URL || process.env.PGHOST) {
     port: process.env.PGPORT || 5432,
     ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false
   });
-  console.log('[DB] Connected via PostgreSQL pool');
+  console.log('[DB] PostgreSQL connected');
 } else {
   sqlite3.verbose();
   sqliteDb = new sqlite3.Database(dbPath, (err) => {
     if (err) {
-      console.error('[DB] SQLite connection error:', err);
+      console.error('[DB] SQLite connection error:', err.message);
     } else {
-      console.log(`[DB] Connected via SQLite at ${dbPath}`);
+      console.log('[DB] SQLite connected');
     }
   });
+}
+
+/**
+ * Safely convert SQLite ? parameter placeholders to PostgreSQL $1, $2
+ * while ignoring question marks inside SQL string literals
+ */
+export function convertPlaceholders(sql) {
+  let paramIndex = 1;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let result = '';
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    if (char === "'" && (i === 0 || sql[i - 1] !== '\\')) {
+      inSingleQuote = !inSingleQuote;
+      result += char;
+    } else if (char === '"' && (i === 0 || sql[i - 1] !== '\\')) {
+      inDoubleQuote = !inDoubleQuote;
+      result += char;
+    } else if (char === '?' && !inSingleQuote && !inDoubleQuote) {
+      result += `$${paramIndex++}`;
+    } else {
+      result += char;
+    }
+  }
+  return result;
 }
 
 /**
@@ -46,12 +73,7 @@ if (process.env.DATABASE_URL || process.env.PGHOST) {
  */
 export async function query(sql, params = []) {
   if (isPg) {
-    // Convert ? parameters to $1, $2 for Postgres if needed
-    let pgSql = sql;
-    let paramIndex = 1;
-    while (pgSql.includes('?')) {
-      pgSql = pgSql.replace('?', `$${paramIndex++}`);
-    }
+    const pgSql = convertPlaceholders(sql);
     const res = await pgPool.query(pgSql, params);
     return res.rows;
   } else {

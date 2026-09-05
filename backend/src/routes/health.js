@@ -19,6 +19,7 @@ router.get('/', async (req, res) => {
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     database: dbStatus,
+    databaseType: db.isPg ? 'postgresql' : 'sqlite',
     memoryUsageMB: Math.round(process.memoryUsage().rss / (1024 * 1024))
   });
 });

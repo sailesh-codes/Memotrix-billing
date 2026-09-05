@@ -1,3 +1,4 @@
+import '../config.js';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import db from './db.js';
@@ -19,8 +20,9 @@ export async function seedDatabase() {
     );
   }
 
-  // 3. Seed Permanent Admin Account (username: teammemotrix@gmail.com, password: Admin1234)
-  const defaultPassHash = bcrypt.hashSync('Admin1234', 12);
+  // 3. Seed Permanent Admin Account (username: teammemotrix@gmail.com)
+  const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || 'Admin1234';
+  const defaultPassHash = bcrypt.hashSync(initialPassword, 12);
   const existingAdmin = await db.queryOne('SELECT * FROM users WHERE username = ? OR email = ? OR id = ?', ['teammemotrix@gmail.com', 'admin', 'user-admin-01']);
 
   if (!existingAdmin) {
@@ -29,9 +31,16 @@ export async function seedDatabase() {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ['user-admin-01', 'tenant-memotrix-01', 'teammemotrix@gmail.com', 'teammemotrix@gmail.com', defaultPassHash, false, 'admin']
     );
-    console.log('[SEED] Admin user seeded (username: teammemotrix@gmail.com, password: Admin1234)');
+    console.log('[SEED] Admin user seeded (username: teammemotrix@gmail.com)');
   } else {
-    await db.query(`UPDATE users SET username = 'teammemotrix@gmail.com', email = 'teammemotrix@gmail.com', password_hash = ?, role = 'admin', must_reset_password = false WHERE id = ?`, [defaultPassHash, existingAdmin.id]);
+    // Preserve existing password hash unless explicitly requested to reset
+    const shouldResetPassword = process.env.RESET_ADMIN_PASSWORD === 'true' || !existingAdmin.password_hash;
+    const passHashToUse = shouldResetPassword ? defaultPassHash : existingAdmin.password_hash;
+
+    await db.query(
+      `UPDATE users SET username = 'teammemotrix@gmail.com', email = 'teammemotrix@gmail.com', password_hash = ?, role = 'admin', must_reset_password = false WHERE id = ?`,
+      [passHashToUse, existingAdmin.id]
+    );
     console.log('[SEED] Admin user verified (username: teammemotrix@gmail.com)');
   }
 

@@ -14,25 +14,34 @@ const DUMMY_HASH = '$2a$12$e8V/C53Fj6wWz97Ew.NfTezJ27F6D48gE/yO2VvJ.1J5E31DqFmve
 
 /**
  * POST /api/auth/login
- * Single-Factor Authentication (Username + Password) with strict rate limiting & timing protection
+ * Single-Factor Authentication (Username/Email + Password) with strict rate limiting & timing protection
  */
 router.post('/login', loginLimiter, async (req, res) => {
-  const { username, password } = req.body;
+  const reqId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const identifier = (req.body.username || req.body.email || req.body.identifier || '').trim();
+  const password = req.body.password;
   const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
   const userAgent = req.headers['user-agent'] || 'Unknown';
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required.' });
+  console.log(`[AUTH] [${reqId}] Login request received`);
+
+  if (!identifier || !password) {
+    console.log(`[AUTH] [${reqId}] Validation error: Missing credentials`);
+    return res.status(400).json({ error: 'Username or email and password are required.' });
   }
 
   try {
-    const user = await db.queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [username, username]);
+    console.log(`[AUTH] [${reqId}] Database lookup started`);
+    const user = await db.queryOne('SELECT * FROM users WHERE username = ? OR email = ?', [identifier, identifier]);
+    console.log(`[AUTH] [${reqId}] User lookup completed`);
 
     // Constant-time password check prevents username enumeration timing attacks
-    const targetHash = user ? user.password_hash : DUMMY_HASH;
-    const isPasswordValid = bcrypt.compareSync(password, targetHash);
+    console.log(`[AUTH] [${reqId}] Password verification started`);
+    const targetHash = user?.password_hash || DUMMY_HASH;
+    const isPasswordValid = await bcrypt.compare(password, targetHash);
 
     if (!user || !isPasswordValid) {
+      console.log(`[AUTH] [${reqId}] Authentication failure: Invalid credentials`);
       await logLoginAttempt({ userId: user?.id || null, ipAddress, userAgent, status: 'failure_password' });
       await logAccountSecurityEvent({ 
         userId: user?.id || null, 
@@ -41,15 +50,16 @@ router.post('/login', loginLimiter, async (req, res) => {
         userAgent, 
         metadata: { reason: user ? 'wrong_password' : 'user_not_found' } 
       });
-      return res.status(401).json({ error: 'Invalid username or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // Single Active Session Enforcement
+    console.log(`[AUTH] [${reqId}] JWT generation started`);
     const newSessionToken = crypto.randomBytes(32).toString('hex');
 
     await db.query('UPDATE users SET active_session_token = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [newSessionToken, user.id]);
 
     const token = generateToken(user, newSessionToken);
+    console.log(`[AUTH] [${reqId}] Login successful`);
 
     await logLoginAttempt({ userId: user.id, ipAddress, userAgent, status: 'success' });
     await logAccountSecurityEvent({ userId: user.id, eventType: 'LOGIN_SUCCESS', ipAddress, userAgent });
@@ -66,8 +76,8 @@ router.post('/login', loginLimiter, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('[AUTH] Login error:', err);
-    return res.status(500).json({ error: 'Internal server login error.' });
+    console.error(`[AUTH ERROR] [${reqId}] Login exception:`, err.message);
+    return res.status(500).json({ error: 'Authentication service temporarily unavailable. Please try again.' });
   }
 });
 
