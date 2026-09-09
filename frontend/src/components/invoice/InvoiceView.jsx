@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
-import { Mail, Download, Printer, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { Mail, Download, Printer, RefreshCw, Image as ImageIcon, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 export function InvoiceView({ bill, items = [], businessProfile, templateSettings, amountInWords, upiQrDataUri, onPrint, onDownloadPdf, onRegeneratePdf, onStatusChange }) {
@@ -99,6 +100,73 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
     }
   };
 
+  const handleDownloadClientPdf = async () => {
+    const element = document.getElementById('invoice-render-card');
+    if (!element) return;
+
+    try {
+      showToast('Generating single-page vector PDF...', 'info');
+
+      // Preload all fonts and images
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
+      const images = element.getElementsByTagName('img');
+      await Promise.all(Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      }));
+
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 6;
+      const printableWidth = pageWidth - (margin * 2);
+      const printableHeight = pageHeight - (margin * 2);
+
+      const imgWidth = printableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight > printableHeight) {
+        const scaleFactor = printableHeight / imgHeight;
+        const scaledWidth = imgWidth * scaleFactor;
+        const scaledHeight = printableHeight;
+        const xOffset = margin + ((printableWidth - scaledWidth) / 2);
+        pdf.addImage(imgData, 'JPEG', xOffset, margin, scaledWidth, scaledHeight, undefined, 'FAST');
+      } else {
+        pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
+      }
+
+      pdf.save(`Invoice_${bill.bill_number}.pdf`);
+      showToast(`Downloaded Single-Page PDF Invoice_${bill.bill_number}.pdf`, 'success');
+    } catch (err) {
+      console.error('Client PDF export error:', err);
+      if (onDownloadPdf) {
+        onDownloadPdf();
+      } else {
+        showToast('Failed to export PDF', 'error');
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Action Bar (Hidden during print) */}
@@ -164,6 +232,16 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
             <span>JPG</span>
           </button>
 
+          {/* Direct Single-Page Vector PDF */}
+          <button
+            onClick={handleDownloadClientPdf}
+            className="px-3 py-2 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm transition flex items-center space-x-1 cursor-pointer"
+            title="Export guaranteed single-page PDF directly"
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Instant PDF</span>
+          </button>
+
           {onRegeneratePdf && (
             <button
               onClick={onRegeneratePdf}
@@ -197,39 +275,39 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
         </div>
       </div>
 
-      {/* Render Card Container with ID for html2canvas */}
-      <div id="invoice-render-card" className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-4xl mx-auto font-sans print-area text-gray-900 text-xs leading-normal">
+      {/* Render Card Container with ID for html2canvas & Print-Area */}
+      <div id="invoice-render-card" className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 print:p-0 print:border-none print:shadow-none print:rounded-none max-w-4xl mx-auto font-sans print-area text-gray-900 text-xs leading-normal">
 
       {/* 1. Header Row */}
-      <div className="flex justify-between items-center mb-2">
+      <div className="flex justify-between items-center mb-2 print:mb-1">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{bp.business_name || 'Memotrix'}</h1>
-          {bp.address && <p className="text-xs text-slate-600 mt-0.5">{bp.address}</p>}
-          <p className="text-xs text-slate-600">Phone: {bp.phone || '6384241882'} | Email: {bp.email || 'teammemotrix@gmail.com'}</p>
-          {bp.gstin && <p className="text-xs text-slate-600">GSTIN: {bp.gstin}</p>}
-          {bp.website && <p className="text-xs text-slate-600">Website: {bp.website}</p>}
+          <h1 className="text-2xl print:text-xl font-black text-slate-900 tracking-tight">{bp.business_name || 'Memotrix'}</h1>
+          {bp.address && <p className="text-xs print:text-[10px] text-slate-600 mt-0.5">{bp.address}</p>}
+          <p className="text-xs print:text-[10px] text-slate-600">Phone: {bp.phone || '6384241882'} | Email: {bp.email || 'teammemotrix@gmail.com'}</p>
+          {bp.gstin && <p className="text-xs print:text-[10px] text-slate-600">GSTIN: {bp.gstin}</p>}
+          {bp.website && <p className="text-xs print:text-[10px] text-slate-600">Website: {bp.website}</p>}
         </div>
-        <div className="flex items-center justify-end max-w-[160px] max-h-[80px]">
+        <div className="flex items-center justify-end max-w-[160px] max-h-[80px] print:max-w-[120px] print:max-h-[50px]">
           <img
             src={bp.logo_original_url || bp.logo_url || '/logo-default.png'}
             alt="Business Logo"
-            className="max-h-[80px] max-w-[160px] w-auto h-auto object-contain flex-shrink-0 bg-transparent"
+            className="max-h-[80px] max-w-[160px] print:max-h-[50px] print:max-w-[120px] w-auto h-auto object-contain flex-shrink-0 bg-transparent"
           />
         </div>
       </div>
 
       {/* 2. Title Bar (Enterprise Blue Theme #2563EB) */}
-      <div className="border-t-2 border-b-2 border-[#2563EB] py-1 my-3 text-center">
-        <h2 className="text-lg font-bold text-[#2563EB] tracking-wide uppercase">{getInvoiceTypeTitle(bill.invoice_type)}</h2>
+      <div className="border-t-2 border-b-2 border-[#2563EB] py-1 print:py-0.5 my-3 print:my-1 text-center">
+        <h2 className="text-lg print:text-sm font-bold text-[#2563EB] tracking-wide uppercase">{getInvoiceTypeTitle(bill.invoice_type)}</h2>
       </div>
 
       {/* 3. Bill To / Invoice Details Row */}
-      <div className="flex justify-between items-start my-3 text-xs">
+      <div className="flex justify-between items-start my-3 print:my-1 text-xs print:text-[10.5px]">
         <div>
           <span className="font-bold text-black block mb-0.5">Bill To</span>
           <p className="font-semibold text-gray-900">{bill.customer_name}</p>
           {bill.customer_phone && <p className="text-gray-500">{bill.customer_phone}</p>}
-          {bill.customer_email && <p className="text-blue-700 text-[11px] font-medium">{bill.customer_email}</p>}
+          {bill.customer_email && <p className="text-blue-700 text-[11px] print:text-[10px] font-medium">{bill.customer_email}</p>}
         </div>
         <div className="text-right">
           <span className="font-bold text-black block mb-0.5">Invoice Details</span>
@@ -239,17 +317,17 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
       </div>
 
       {/* 4. Line Items Table (Enterprise Blue Header #2563EB) */}
-      <div className="overflow-x-auto my-3">
-        <table className="w-full border-collapse text-xs">
+      <div className="overflow-x-auto my-3 print:my-1">
+        <table className="w-full border-collapse text-xs print:text-[10px]">
           <thead>
-            <tr className="bg-[#2563EB] text-white font-bold uppercase text-[11px]">
-              <th className="py-2 px-2 text-center w-8">#</th>
-              <th className="py-2 px-2 text-left">Item Name</th>
-              <th className="py-2 px-2 text-left w-24">HSN/ SAC</th>
-              <th className="py-2 px-2 text-center w-16">Quantity</th>
-              <th className="py-2 px-2 text-right w-24">Price/ Unit</th>
-              <th className="py-2 px-2 text-right w-28">Discount</th>
-              <th className="py-2 px-2 text-right w-24">Amount</th>
+            <tr className="bg-[#2563EB] text-white font-bold uppercase text-[11px] print:text-[9.5px]">
+              <th className="py-2 print:py-1 px-2 text-center w-8">#</th>
+              <th className="py-2 print:py-1 px-2 text-left">Item Name</th>
+              <th className="py-2 print:py-1 px-2 text-left w-24">HSN/ SAC</th>
+              <th className="py-2 print:py-1 px-2 text-center w-16">Quantity</th>
+              <th className="py-2 print:py-1 px-2 text-right w-24">Price/ Unit</th>
+              <th className="py-2 print:py-1 px-2 text-right w-28">Discount</th>
+              <th className="py-2 print:py-1 px-2 text-right w-24">Amount</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -262,58 +340,58 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
 
               return (
                 <tr key={idx} className={idx % 2 === 1 ? 'bg-gray-50/50' : 'bg-white'}>
-                  <td className="py-2 px-2 text-center text-gray-600">{idx + 1}</td>
-                  <td className="py-2 px-2 font-bold text-gray-900">{item.item_name}</td>
-                  <td className="py-2 px-2 text-gray-600">{item.hsn_sac || ''}</td>
-                  <td className="py-2 px-2 text-center font-bold text-gray-900">{qty}</td>
-                  <td className="py-2 px-2 text-right text-gray-900">₹ {unitPrice.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-right text-gray-700">
+                  <td className="py-2 print:py-1 px-2 text-center text-gray-600">{idx + 1}</td>
+                  <td className="py-2 print:py-1 px-2 font-bold text-gray-900">{item.item_name}</td>
+                  <td className="py-2 print:py-1 px-2 text-gray-600">{item.hsn_sac || ''}</td>
+                  <td className="py-2 print:py-1 px-2 text-center font-bold text-gray-900">{qty}</td>
+                  <td className="py-2 print:py-1 px-2 text-right text-gray-900">₹ {unitPrice.toFixed(2)}</td>
+                  <td className="py-2 print:py-1 px-2 text-right text-gray-700">
                     ₹ {discAmt.toFixed(2)}
-                    {discAmt > 0 && <span className="block text-[10px] text-gray-500">({discPct.toFixed(1)}%)</span>}
+                    {discAmt > 0 && <span className="block text-[10px] print:text-[8.5px] text-gray-500">({discPct.toFixed(1)}%)</span>}
                   </td>
-                  <td className="py-2 px-2 text-right font-bold text-gray-900">₹ {lineTotal.toFixed(2)}</td>
+                  <td className="py-2 print:py-1 px-2 text-right font-bold text-gray-900">₹ {lineTotal.toFixed(2)}</td>
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-b border-gray-900 font-bold text-xs bg-white">
-              <td colSpan="3" className="py-2 px-2 text-left">Total</td>
-              <td className="py-2 px-2 text-center text-gray-900">{totalQty}</td>
+            <tr className="border-t-2 border-b border-gray-900 font-bold text-xs print:text-[10px] bg-white">
+              <td colSpan="3" className="py-2 print:py-1 px-2 text-left">Total</td>
+              <td className="py-2 print:py-1 px-2 text-center text-gray-900">{totalQty}</td>
               <td></td>
-              <td className="py-2 px-2 text-right text-gray-900">₹ {parseFloat(bill.discount_total || 0).toFixed(2)}</td>
-              <td className="py-2 px-2 text-right text-[#2563EB] font-extrabold">₹ {parseFloat(bill.grand_total).toFixed(2)}</td>
+              <td className="py-2 print:py-1 px-2 text-right text-gray-900">₹ {parseFloat(bill.discount_total || 0).toFixed(2)}</td>
+              <td className="py-2 print:py-1 px-2 text-right text-[#2563EB] font-extrabold">₹ {parseFloat(bill.grand_total).toFixed(2)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
 
       {/* 5. Left Column (Words & Terms & QR) vs Right Column (Summary & Signature) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-3 my-3 print:my-1">
         {/* Left Side */}
-        <div className="space-y-3">
+        <div className="space-y-3 print:space-y-1">
           <div>
-            <h4 className="font-bold text-black text-xs uppercase">Invoice Amount In Words</h4>
-            <p className="text-xs text-gray-800 font-medium mt-0.5">{amountInWords}</p>
+            <h4 className="font-bold text-black text-xs print:text-[10px] uppercase">Invoice Amount In Words</h4>
+            <p className="text-xs print:text-[10px] text-gray-800 font-medium mt-0.5">{amountInWords}</p>
           </div>
 
           <div>
-            <h4 className="font-bold text-black text-xs uppercase mb-1">Terms And Conditions</h4>
-            <div className="text-[10px] text-gray-700 space-y-1 whitespace-pre-line leading-relaxed">
+            <h4 className="font-bold text-black text-xs print:text-[10px] uppercase mb-1 print:mb-0.5">Terms And Conditions</h4>
+            <div className="text-[10px] print:text-[8.5px] text-gray-700 space-y-1 print:space-y-0.5 whitespace-pre-line leading-relaxed">
               {tpl.terms_and_conditions}
             </div>
           </div>
 
           {/* UPI QR Code */}
           {effectiveQrDataUri && bp.show_qr_code !== false && (
-            <div className="pt-2">
-              <div className="inline-block p-2 border border-gray-200 rounded-xl bg-white text-center shadow-xs">
-                <img src={effectiveQrDataUri} alt="UPI QR Code" className="w-20 h-20 mx-auto" />
-                <div className="mt-1 text-[10px] font-bold text-slate-900 tracking-wide">
+            <div className="pt-2 print:pt-0.5">
+              <div className="inline-block p-2 print:p-1 border border-gray-200 rounded-xl bg-white text-center shadow-xs">
+                <img src={effectiveQrDataUri} alt="UPI QR Code" className="w-20 h-20 print:w-14 print:h-14 mx-auto" />
+                <div className="mt-1 text-[10px] print:text-[8.5px] font-bold text-slate-900 tracking-wide">
                   Scan & Pay
                 </div>
                 {bp.show_upi_text !== false && bp.upi_id && (
-                  <div className="text-[9px] text-slate-600 font-mono mt-0.5 max-w-[120px] break-all leading-tight">
+                  <div className="text-[9px] print:text-[7.5px] text-slate-600 font-mono mt-0.5 max-w-[120px] break-all leading-tight">
                     UPI ID: <span className="font-bold">{bp.upi_id}</span>
                   </div>
                 )}
@@ -324,7 +402,7 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
 
         {/* Right Side Summary & Signature */}
         <div className="flex flex-col justify-between">
-          <div className="border border-gray-200 rounded p-2.5 space-y-1.5 bg-gray-50/50 text-xs">
+          <div className="border border-gray-200 rounded p-2.5 print:p-1.5 space-y-1.5 print:space-y-0.5 bg-gray-50/50 text-xs print:text-[9.5px]">
             <div className="flex justify-between text-gray-700">
               <span>Sub Total</span>
               <span className="font-medium">₹ {parseFloat(bill.subtotal).toFixed(2)}</span>
@@ -333,7 +411,7 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
               <span>Discount</span>
               <span className="font-medium">₹ {parseFloat(bill.discount_total || 0).toFixed(2)}</span>
             </div>
-            <div className="flex justify-between bg-[#2563EB] text-white font-bold p-1.5 rounded">
+            <div className="flex justify-between bg-[#2563EB] text-white font-bold p-1.5 print:p-1 rounded">
               <span>Total</span>
               <span>₹ {parseFloat(bill.grand_total).toFixed(2)}</span>
             </div>
@@ -352,12 +430,12 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
           </div>
 
           {/* Signature Area */}
-          <div className="text-right mt-6 pt-2">
-            <p className="text-xs text-gray-500">For: {bp.business_name || 'Memotrix'}</p>
-            <div className="font-bold text-sm text-slate-900 my-2 border-b-2 border-slate-900 inline-block pb-0.5">
+          <div className="text-right mt-6 pt-2 print:mt-1.5 print:pt-0.5">
+            <p className="text-xs print:text-[9.5px] text-gray-500">For: {bp.business_name || 'Memotrix'}</p>
+            <div className="font-bold text-sm print:text-xs text-slate-900 my-2 print:my-0.5 border-b-2 border-slate-900 inline-block pb-0.5">
               {bill.executed_by || tpl.executed_by_value || 'Authorized Signatory'}
             </div>
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+            <p className="text-[10px] print:text-[8.5px] font-bold text-gray-500 uppercase tracking-wider">
               {tpl.executed_by_label || 'Authorized Signatory'}
             </p>
           </div>
@@ -365,25 +443,25 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
       </div>
 
       {/* 6. Acknowledgment Section (Tear-Off) */}
-      <div className="mt-6 pt-3 border-t border-dashed border-gray-400">
-        <div className="text-center mb-2">
-          <span className="text-[11px] font-bold text-gray-700 uppercase block">{tpl.footer_content || 'Acknowledgment'}</span>
-          <h3 className="text-sm font-bold text-[#2563EB]">{tpl.disclaimer_text || bp.business_name || 'Memotrix'}</h3>
+      <div className="mt-6 pt-3 print:mt-2 print:pt-1 border-t border-dashed border-gray-400 break-inside-avoid">
+        <div className="text-center mb-2 print:mb-0.5">
+          <span className="text-[11px] print:text-[9.5px] font-bold text-gray-700 uppercase block">{tpl.footer_content || 'Acknowledgment'}</span>
+          <h3 className="text-sm print:text-xs font-bold text-[#2563EB]">{tpl.disclaimer_text || bp.business_name || 'Memotrix'}</h3>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 text-xs mt-2">
+        <div className="grid grid-cols-3 gap-4 print:gap-2 text-xs print:text-[9.5px] mt-2 print:mt-0.5">
           <div>
-            <span className="text-[#0B8A3E] font-semibold text-[10px] block">Invoice To:</span>
+            <span className="text-[#0B8A3E] font-semibold text-[10px] print:text-[8.5px] block">Invoice To:</span>
             <p className="font-bold text-gray-900">{bill.customer_name}</p>
           </div>
           <div>
-            <span className="text-[#0B8A3E] font-semibold text-[10px] block">Invoice Details:</span>
+            <span className="text-[#0B8A3E] font-semibold text-[10px] print:text-[8.5px] block">Invoice Details:</span>
             <p className="text-gray-900">Invoice Date : {bill.bill_date}</p>
-            <p className="text-gray-900">Invoice Amount : {bill.grand_total}</p>
+            <p className="text-gray-900">Invoice Amount : ₹ {parseFloat(bill.grand_total).toFixed(2)}</p>
           </div>
           <div className="text-right flex flex-col justify-end">
             <div className="border-b border-dotted border-gray-400 mb-1 w-32 ml-auto"></div>
-            <span className="text-[10px] text-gray-600 font-medium">Receiver's Seal & Sign</span>
+            <span className="text-[10px] print:text-[8.5px] text-gray-600 font-medium">Receiver's Seal & Sign</span>
           </div>
         </div>
       </div>

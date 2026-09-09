@@ -574,18 +574,18 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
     const lineTotal = parseFloat(item.line_total || 0);
 
     const discLabel = discAmt > 0 
-      ? `&#8377; ${discAmt.toFixed(2)}<br/><span style="font-size: 10px; color: #555;">(${discPct.toFixed(1)}%)</span>`
-      : `&#8377; 0.00<span style="font-size: 10px; color: #555;"> (0.0%)</span>`;
+      ? `₹ ${discAmt.toFixed(2)}<br/><span style="font-size: 9px; color: #64748b;">(${discPct.toFixed(1)}%)</span>`
+      : `₹ 0.00<span style="font-size: 9px; color: #64748b;"> (0.0%)</span>`;
 
     return `
-      <tr style="border-bottom: 1px solid #e5e7eb;">
-        <td style="padding: 7px; text-align: center; color: #333;">${idx + 1}</td>
-        <td style="padding: 7px; font-weight: bold; color: #111;">${item.item_name}</td>
-        <td style="padding: 7px; color: #555;">${item.hsn_sac || ''}</td>
-        <td style="padding: 7px; text-align: center; font-weight: bold;">${qty}</td>
-        <td style="padding: 7px; text-align: right;">&#8377; ${unitPrice.toFixed(2)}</td>
-        <td style="padding: 7px; text-align: right; line-height: 1.2;">${discLabel}</td>
-        <td style="padding: 7px; text-align: right; font-weight: bold; color: #111;">&#8377; ${lineTotal.toFixed(2)}</td>
+      <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
+        <td style="padding: 5px 6px; text-align: center; color: #475569;">${idx + 1}</td>
+        <td style="padding: 5px 6px; font-weight: 600; color: #0f172a;">${item.item_name}</td>
+        <td style="padding: 5px 6px; color: #64748b;">${item.hsn_sac || ''}</td>
+        <td style="padding: 5px 6px; text-align: center; font-weight: 600; color: #0f172a;">${qty}</td>
+        <td style="padding: 5px 6px; text-align: right; color: #1e293b;">₹ ${unitPrice.toFixed(2)}</td>
+        <td style="padding: 5px 6px; text-align: right; line-height: 1.2; color: #475569;">${discLabel}</td>
+        <td style="padding: 5px 6px; text-align: right; font-weight: 700; color: #0f172a;">₹ ${lineTotal.toFixed(2)}</td>
       </tr>
     `;
   }).join('');
@@ -605,35 +605,58 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
       <meta charset="utf-8">
       <title>${pdfTitle} - ${bill.bill_number}</title>
       <style>
-        @page { size: A4 portrait; margin: 10mm; }
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #111111; font-size: 11px; line-height: 1.35; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .business-title { font-size: 22px; font-weight: 800; margin: 0; color: #0f172a; tracking-tight: -0.5px; }
-        .sub-text { font-size: 10px; color: #475569; margin: 1px 0; }
-        .logo-container { width: 160px; height: 80px; display: flex; align-items: center; justify-content: flex-end; }
-        .logo-img { max-width: 160px; max-height: 80px; width: auto; height: auto; object-fit: contain; }
-        .title-bar { border-top: 2px solid #2563EB; border-bottom: 2px solid #2563EB; color: #2563EB; background-color: transparent; text-align: center; font-size: 16px; font-weight: bold; padding: 4px 0; margin: 10px 0; letter-spacing: 0.5px; text-transform: uppercase; }
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 11px; }
+        @page { size: A4 portrait; margin: 8mm 10mm; }
+        * { box-sizing: border-box; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+          margin: 0; 
+          padding: 0; 
+          color: #0f172a; 
+          font-size: 10.5px; 
+          line-height: 1.3; 
+          -webkit-print-color-adjust: exact !important; 
+          print-color-adjust: exact !important;
+          background: #ffffff;
+        }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .business-title { font-size: 20px; font-weight: 800; margin: 0; color: #0f172a; letter-spacing: -0.3px; }
+        .sub-text { font-size: 9.5px; color: #475569; margin: 1px 0; }
+        .logo-container { width: 140px; height: 60px; display: flex; align-items: center; justify-content: flex-end; }
+        .logo-img { max-width: 140px; max-height: 60px; width: auto; height: auto; object-fit: contain; }
+        .title-bar { 
+          border-top: 2px solid #2563EB; 
+          border-bottom: 2px solid #2563EB; 
+          color: #2563EB; 
+          background-color: transparent; 
+          text-align: center; 
+          font-size: 15px; 
+          font-weight: 700; 
+          padding: 3px 0; 
+          margin: 6px 0; 
+          letter-spacing: 0.5px; 
+          text-transform: uppercase; 
+        }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 10.5px; }
         .info-block { width: 48%; }
-        .info-block strong { color: #000000; display: block; font-size: 11px; margin-bottom: 2px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10.5px; }
-        th { background-color: #2563EB; color: #ffffff; text-align: left; padding: 6px 7px; font-weight: bold; }
-        .table-footer { font-weight: bold; background-color: #ffffff; border-top: 2px solid #0f172a; border-bottom: 1px solid #0f172a; }
-        .table-footer td { padding: 8px 7px; }
-        .main-grid { display: flex; justify-content: space-between; margin-top: 15px; gap: 20px; }
+        .info-block strong { color: #0f172a; display: block; font-size: 10.5px; margin-bottom: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10px; }
+        th { background-color: #2563EB; color: #ffffff; text-align: left; padding: 5px 6px; font-weight: 700; }
+        .table-footer { font-weight: 700; background-color: #ffffff; border-top: 2px solid #0f172a; border-bottom: 1px solid #0f172a; }
+        .table-footer td { padding: 6px; font-size: 10.5px; }
+        .main-grid { display: flex; justify-content: space-between; margin-top: 8px; gap: 16px; }
         .left-col { width: 55%; }
         .right-col { width: 42%; }
-        .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin-bottom: 4px; color: #000000; letter-spacing: 0.5px; }
-        .terms-list { font-size: 10px; color: #334155; line-height: 1.4; white-space: pre-line; margin-top: 3px; }
-        .summary-box { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 11px; background-color: #ffffff; }
-        .summary-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
-        .summary-row.total-bar { background-color: #2563EB; color: #ffffff; font-weight: bold; border-bottom: none; font-size: 13px; }
-        .signature-area { text-align: right; margin-top: 20px; }
-        .signature-name { font-size: 13px; font-weight: 800; color: #0f172a; margin: 10px 0 2px 0; border-bottom: 2px solid #0f172a; display: inline-block; padding-bottom: 2px; }
-        .signature-label { font-size: 9px; font-weight: bold; color: #64748b; text-transform: uppercase; }
-        .ack-section { margin-top: 20px; padding-top: 10px; border-top: 1px dashed #94a3b8; }
-        .ack-header { text-align: center; margin-bottom: 8px; }
-        .ack-grid { display: flex; justify-content: space-between; font-size: 10px; }
+        .section-title { font-weight: 700; text-transform: uppercase; font-size: 9.5px; margin-bottom: 2px; color: #0f172a; letter-spacing: 0.5px; }
+        .terms-list { font-size: 9px; color: #334155; line-height: 1.35; white-space: pre-line; margin-top: 2px; }
+        .summary-box { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 10px; background-color: #ffffff; }
+        .summary-row { display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
+        .summary-row.total-bar { background-color: #2563EB; color: #ffffff; font-weight: 700; border-bottom: none; font-size: 12px; }
+        .signature-area { text-align: right; margin-top: 10px; }
+        .signature-name { font-size: 12px; font-weight: 700; color: #0f172a; margin: 6px 0 2px 0; border-bottom: 2px solid #0f172a; display: inline-block; padding-bottom: 1px; }
+        .signature-label { font-size: 8.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+        .ack-section { margin-top: 10px; padding-top: 6px; border-top: 1px dashed #94a3b8; page-break-inside: avoid; break-inside: avoid; }
+        .ack-header { text-align: center; margin-bottom: 4px; }
+        .ack-grid { display: flex; justify-content: space-between; font-size: 9.5px; }
       </style>
     </head>
     <body>
@@ -655,7 +678,7 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
       <div class="info-row">
         <div class="info-block">
           <strong>Bill To</strong>
-          <span style="font-weight: bold; font-size: 12px; color: #0f172a;">${bill.customer_name}</span>
+          <span style="font-weight: 700; font-size: 11px; color: #0f172a;">${bill.customer_name}</span>
           ${bill.customer_phone ? `<br/><span style="color: #64748b;">Phone: ${bill.customer_phone}</span>` : ''}
           ${bill.customer_email ? `<br/><span style="color: #1d4ed8;">Email: ${bill.customer_email}</span>` : ''}
         </div>
@@ -663,7 +686,7 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
           <strong>Invoice Details</strong>
           <span>Invoice No: <strong>${bill.bill_number}</strong></span><br/>
           <span>Invoice Date: ${bill.bill_date}</span>
-          ${bill.due_date ? `<br/><span style="color: #b45309; font-weight: bold;">Due Date: ${bill.due_date}</span>` : ''}
+          ${bill.due_date ? `<br/><span style="color: #b45309; font-weight: 700;">Due Date: ${bill.due_date}</span>` : ''}
         </div>
       </div>
 
@@ -672,11 +695,11 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
           <tr>
             <th style="width: 25px; text-align: center;">#</th>
             <th>Item Name</th>
-            <th style="width: 80px;">HSN/ SAC</th>
-            <th style="width: 60px; text-align: center;">Quantity</th>
+            <th style="width: 75px;">HSN/ SAC</th>
+            <th style="width: 55px; text-align: center;">Quantity</th>
             <th style="width: 80px; text-align: right;">Price/ Unit</th>
-            <th style="width: 90px; text-align: right;">Discount</th>
-            <th style="width: 90px; text-align: right;">Amount</th>
+            <th style="width: 85px; text-align: right;">Discount</th>
+            <th style="width: 85px; text-align: right;">Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -684,33 +707,33 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
         </tbody>
         <tfoot>
           <tr class="table-footer">
-            <td colspan="3" style="padding-left: 7px;">Total</td>
+            <td colspan="3" style="padding-left: 6px;">Total</td>
             <td style="text-align: center;">${totalQty}</td>
             <td></td>
-            <td style="text-align: right;">&#8377; ${parseFloat(bill.discount_total || 0).toFixed(2)}</td>
-            <td style="text-align: right; font-size: 13px; color: #0B8A3E; font-weight: 800;">&#8377; ${parseFloat(bill.grand_total).toFixed(2)}</td>
+            <td style="text-align: right;">₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</td>
+            <td style="text-align: right; font-size: 12px; color: #2563EB; font-weight: 800;">₹ ${parseFloat(bill.grand_total).toFixed(2)}</td>
           </tr>
         </tfoot>
       </table>
 
       <div class="main-grid">
         <div class="left-col">
-          <div style="margin-bottom: 12px;">
+          <div style="margin-bottom: 8px;">
             <div class="section-title">Invoice Amount In Words</div>
-            <div style="color: #0f172a; font-weight: 500; font-size: 11px;">${amountInWords}</div>
+            <div style="color: #0f172a; font-weight: 600; font-size: 10px;">${amountInWords}</div>
           </div>
 
-          <div style="margin-bottom: 12px;">
+          <div style="margin-bottom: 8px;">
             <div class="section-title">Terms And Conditions</div>
             <div class="terms-list">${tpl?.terms_and_conditions || ''}</div>
           </div>
 
           ${(upiQrDataUri && bp?.show_qr_code !== false) ? `
-            <div style="margin-top: 10px;">
-              <div style="display: inline-block; padding: 6px; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; background: #ffffff;">
-                <img src="${upiQrDataUri}" style="width: 85px; height: 85px; display: block; margin: 0 auto;" />
-                <div style="font-size: 9px; font-weight: bold; color: #1e293b; margin-top: 4px;">Scan & Pay</div>
-                ${bp?.show_upi_text !== false && bp?.upi_id ? `<div style="font-size: 8px; color: #475569; margin-top: 1px;">UPI ID: <strong>${bp.upi_id}</strong></div>` : ''}
+            <div style="margin-top: 6px;">
+              <div style="display: inline-block; padding: 5px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #ffffff;">
+                <img src="${upiQrDataUri}" style="width: 75px; height: 75px; display: block; margin: 0 auto;" />
+                <div style="font-size: 8.5px; font-weight: 700; color: #1e293b; margin-top: 3px;">Scan & Pay</div>
+                ${bp?.show_upi_text !== false && bp?.upi_id ? `<div style="font-size: 7.5px; color: #475569; margin-top: 1px;">UPI ID: <strong>${bp.upi_id}</strong></div>` : ''}
               </div>
             </div>
           ` : ''}
@@ -718,16 +741,16 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
 
         <div class="right-col">
           <div class="summary-box">
-            <div class="summary-row"><span>Sub Total</span><span>&#8377; ${parseFloat(bill.subtotal).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Discount</span><span>&#8377; ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
-            <div class="summary-row total-bar"><span>Total</span><span>&#8377; ${parseFloat(bill.grand_total).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Received</span><span>&#8377; ${parseFloat(bill.received_amount || 0).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Balance</span><span>&#8377; ${parseFloat(bill.balance_amount || 0).toFixed(2)}</span></div>
-            <div class="summary-row"><span>You Saved</span><span>&#8377; ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
+            <div class="summary-row"><span>Sub Total</span><span>₹ ${parseFloat(bill.subtotal).toFixed(2)}</span></div>
+            <div class="summary-row"><span>Discount</span><span>₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
+            <div class="summary-row total-bar"><span>Total</span><span>₹ ${parseFloat(bill.grand_total).toFixed(2)}</span></div>
+            <div class="summary-row"><span>Received</span><span>₹ ${parseFloat(bill.received_amount || 0).toFixed(2)}</span></div>
+            <div class="summary-row"><span>Balance</span><span>₹ ${parseFloat(bill.balance_amount || 0).toFixed(2)}</span></div>
+            <div class="summary-row"><span>You Saved</span><span>₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
           </div>
 
           <div class="signature-area">
-            <div style="font-size: 10px; color: #64748b;">For: ${bp?.business_name || 'Memotrix'}</div>
+            <div style="font-size: 9.5px; color: #64748b;">For: ${bp?.business_name || 'Memotrix'}</div>
             <div class="signature-name">${executedByName}</div>
             <div class="signature-label">
               ${tpl?.executed_by_label || 'Authorized Signatory'}
@@ -738,23 +761,23 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
 
       <div class="ack-section">
         <div class="ack-header">
-          <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b;">${tpl?.footer_content || 'Acknowledgment'}</div>
-          <div style="font-size: 12px; font-weight: bold; color: #2563EB;">${tpl?.disclaimer_text || bp?.business_name || 'Memotrix'}</div>
+          <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #64748b;">${tpl?.footer_content || 'Acknowledgment'}</div>
+          <div style="font-size: 11px; font-weight: 700; color: #2563EB;">${tpl?.disclaimer_text || bp?.business_name || 'Memotrix'}</div>
         </div>
 
         <div class="ack-grid">
           <div>
-            <span style="color: #2563EB; font-weight: bold;">Invoice To:</span><br/>
+            <span style="color: #2563EB; font-weight: 700;">Invoice To:</span><br/>
             <strong>${bill.customer_name}</strong>
           </div>
           <div>
-            <span style="color: #2563EB; font-weight: bold;">Invoice Details:</span><br/>
+            <span style="color: #2563EB; font-weight: 700;">Invoice Details:</span><br/>
             Invoice Date : ${bill.bill_date}<br/>
-            Invoice Amount : &#8377; ${parseFloat(bill.grand_total).toFixed(2)}
+            Invoice Amount : ₹ ${parseFloat(bill.grand_total).toFixed(2)}
           </div>
           <div style="text-align: right; display: flex; flex-direction: column; justify-content: flex-end;">
-            <div style="border-bottom: 1px dotted #94a3b8; width: 140px; margin-left: auto; margin-bottom: 3px;"></div>
-            <span style="font-size: 9px; color: #64748b;">Receiver's Seal & Sign</span>
+            <div style="border-bottom: 1px dotted #94a3b8; width: 130px; margin-left: auto; margin-bottom: 3px;"></div>
+            <span style="font-size: 8.5px; color: #64748b;">Receiver's Seal & Sign</span>
           </div>
         </div>
       </div>

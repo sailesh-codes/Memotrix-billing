@@ -67,34 +67,66 @@
   @apply py-2.5 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 dark:from-blue-500 dark:to-indigo-600 dark:hover:from-blue-600 dark:hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/35 transition-all duration-200 flex items-center justify-center space-x-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
-/* Print Optimization CSS for A4 Tax Invoice */
+/* Print Optimization CSS for A4 Tax Invoice - Strict Single-Page */
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
-    margin: 0 !important;
-    padding: 0 !important;
+  @page {
+    size: A4 portrait;
+    margin: 6mm 8mm;
   }
 
-  /* Hide app navigation chrome */
-  header, nav, aside, .no-print, button, .sidebar-container {
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-sizing: border-box !important;
+  }
+
+  html, body {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+  }
+
+  /* Reset all application layout ancestor containers */
+  #root,
+  #root > div,
+  main,
+  .min-h-screen,
+  .space-y-6,
+  .space-y-4 {
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: transparent !important;
+    border: none !important;
+  }
+
+  /* Hide app navigation chrome and non-printable elements */
+  header, nav, aside, .no-print, button, .sidebar-container, footer, [role="navigation"] {
     display: none !important;
   }
 
+  /* Print Area Card: Fit neatly within A4 margins */
   .print-area {
     display: block !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: static !important;
     width: 100% !important;
+    max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
-  }
-
-  @page {
-    size: A4 portrait;
-    margin: 10mm;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
+
