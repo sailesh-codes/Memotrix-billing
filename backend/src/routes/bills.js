@@ -507,12 +507,6 @@ router.put('/:id', async (req, res) => {
 });
 
 function getLogoBase64DataUri(logoUrl) {
-  const defaultLogoPaths = [
-    path.join(process.cwd(), 'public', 'logo-default.png'),
-    path.join(process.cwd(), '..', 'frontend', 'public', 'logo-default.png'),
-    path.join(process.cwd(), 'logo-default.png')
-  ];
-
   let targetPath = null;
 
   if (logoUrl && typeof logoUrl === 'string' && logoUrl.trim().length > 0) {
@@ -521,20 +515,31 @@ function getLogoBase64DataUri(logoUrl) {
       return rawUrl;
     }
 
-    if (rawUrl.startsWith('/uploads/')) {
-      targetPath = path.join(process.cwd(), 'public', rawUrl);
-    } else if (rawUrl.startsWith('/')) {
-      targetPath = path.join(process.cwd(), 'public', rawUrl);
-      if (!fs.existsSync(targetPath)) {
-        targetPath = path.join(process.cwd(), '..', 'frontend', 'public', rawUrl);
+    const cleanRelative = rawUrl.replace(/^\//, '');
+    const candidatePaths = [
+      path.join(process.cwd(), 'public', cleanRelative),
+      path.join(process.cwd(), cleanRelative),
+      path.join(process.cwd(), 'assets', cleanRelative),
+      path.join(process.cwd(), '..', 'frontend', 'public', cleanRelative),
+      path.resolve(cleanRelative)
+    ];
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        targetPath = p;
+        break;
       }
-    } else if (fs.existsSync(rawUrl)) {
-      targetPath = rawUrl;
     }
   }
 
   if (!targetPath || !fs.existsSync(targetPath)) {
-    for (const p of defaultLogoPaths) {
+    const fallbackPaths = [
+      path.join(process.cwd(), 'public', 'logo-default.png'),
+      path.join(process.cwd(), 'assets', 'logo-default.png'),
+      path.join(process.cwd(), '..', 'frontend', 'public', 'logo-default.png'),
+      path.join(process.cwd(), 'logo-default.png')
+    ];
+    for (const p of fallbackPaths) {
       if (fs.existsSync(p)) {
         targetPath = p;
         break;
@@ -566,30 +571,6 @@ function getLogoBase64DataUri(logoUrl) {
 
 function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
   const totalQty = items.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
-  const itemsHtml = items.map((item, idx) => {
-    const qty = parseInt(item.quantity) || 1;
-    const unitPrice = parseFloat(item.unit_price || 0);
-    const discAmt = parseFloat(item.discount_amount || 0);
-    const discPct = item.discount_percent ? parseFloat(item.discount_percent) : (unitPrice * qty > 0 ? (discAmt / (unitPrice * qty)) * 100 : 0);
-    const lineTotal = parseFloat(item.line_total || 0);
-
-    const discLabel = discAmt > 0 
-      ? `₹ ${discAmt.toFixed(2)}<br/><span style="font-size: 9px; color: #64748b;">(${discPct.toFixed(1)}%)</span>`
-      : `₹ 0.00<span style="font-size: 9px; color: #64748b;"> (0.0%)</span>`;
-
-    return `
-      <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
-        <td style="padding: 5px 6px; text-align: center; color: #475569;">${idx + 1}</td>
-        <td style="padding: 5px 6px; font-weight: 600; color: #0f172a;">${item.item_name}</td>
-        <td style="padding: 5px 6px; color: #64748b;">${item.hsn_sac || ''}</td>
-        <td style="padding: 5px 6px; text-align: center; font-weight: 600; color: #0f172a;">${qty}</td>
-        <td style="padding: 5px 6px; text-align: right; color: #1e293b;">₹ ${unitPrice.toFixed(2)}</td>
-        <td style="padding: 5px 6px; text-align: right; line-height: 1.2; color: #475569;">${discLabel}</td>
-        <td style="padding: 5px 6px; text-align: right; font-weight: 700; color: #0f172a;">₹ ${lineTotal.toFixed(2)}</td>
-      </tr>
-    `;
-  }).join('');
-
   const executedByName = bill.executed_by || tpl?.executed_by_value || 'Authorized Signatory';
   const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url || bp?.logo_url);
 
@@ -598,192 +579,485 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
   if (bill.invoice_type === 'estimate') pdfTitle = 'ESTIMATE / PROFORMA';
   if (bill.invoice_type === 'quotation') pdfTitle = 'COMMERCIAL QUOTATION';
 
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>${pdfTitle} - ${bill.bill_number}</title>
-      <style>
-        @page { size: A4 portrait; margin: 8mm 10mm; }
-        * { box-sizing: border-box; }
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-          margin: 0; 
-          padding: 0; 
-          color: #0f172a; 
-          font-size: 10.5px; 
-          line-height: 1.3; 
-          -webkit-print-color-adjust: exact !important; 
-          print-color-adjust: exact !important;
-          background: #ffffff;
-        }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .business-title { font-size: 20px; font-weight: 800; margin: 0; color: #0f172a; letter-spacing: -0.3px; }
-        .sub-text { font-size: 9.5px; color: #475569; margin: 1px 0; }
-        .logo-container { width: 140px; height: 60px; display: flex; align-items: center; justify-content: flex-end; }
-        .logo-img { max-width: 140px; max-height: 60px; width: auto; height: auto; object-fit: contain; }
-        .title-bar { 
-          border-top: 2px solid #2563EB; 
-          border-bottom: 2px solid #2563EB; 
-          color: #2563EB; 
-          background-color: transparent; 
-          text-align: center; 
-          font-size: 15px; 
-          font-weight: 700; 
-          padding: 3px 0; 
-          margin: 6px 0; 
-          letter-spacing: 0.5px; 
-          text-transform: uppercase; 
-        }
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 10.5px; }
-        .info-block { width: 48%; }
-        .info-block strong { color: #0f172a; display: block; font-size: 10.5px; margin-bottom: 2px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10px; }
-        th { background-color: #2563EB; color: #ffffff; text-align: left; padding: 5px 6px; font-weight: 700; }
-        .table-footer { font-weight: 700; background-color: #ffffff; border-top: 2px solid #0f172a; border-bottom: 1px solid #0f172a; }
-        .table-footer td { padding: 6px; font-size: 10.5px; }
-        .main-grid { display: flex; justify-content: space-between; margin-top: 8px; gap: 16px; }
-        .left-col { width: 55%; }
-        .right-col { width: 42%; }
-        .section-title { font-weight: 700; text-transform: uppercase; font-size: 9.5px; margin-bottom: 2px; color: #0f172a; letter-spacing: 0.5px; }
-        .terms-list { font-size: 9px; color: #334155; line-height: 1.35; white-space: pre-line; margin-top: 2px; }
-        .summary-box { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 10px; background-color: #ffffff; }
-        .summary-row { display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
-        .summary-row.total-bar { background-color: #2563EB; color: #ffffff; font-weight: 700; border-bottom: none; font-size: 12px; }
-        .signature-area { text-align: right; margin-top: 10px; }
-        .signature-name { font-size: 12px; font-weight: 700; color: #0f172a; margin: 6px 0 2px 0; border-bottom: 2px solid #0f172a; display: inline-block; padding-bottom: 1px; }
-        .signature-label { font-size: 8.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-        .ack-section { margin-top: 10px; padding-top: 6px; border-top: 1px dashed #94a3b8; page-break-inside: avoid; break-inside: avoid; }
-        .ack-header { text-align: center; margin-bottom: 4px; }
-        .ack-grid { display: flex; justify-content: space-between; font-size: 9.5px; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
+  const itemsHtml = items.map((item, idx) => {
+    const qty = parseInt(item.quantity) || 1;
+    const unitPrice = parseFloat(item.unit_price || 0);
+    const discAmt = parseFloat(item.discount_amount || 0);
+    const discPct = item.discount_percent ? parseFloat(item.discount_percent) : (unitPrice * qty > 0 ? (discAmt / (unitPrice * qty)) * 100 : 0);
+    const lineTotal = parseFloat(item.line_total || 0);
+
+    const discDisplay = discAmt > 0
+      ? `₹ ${discAmt.toFixed(2)}<span style="display:block;font-size:8.5px;color:#6b7280;">(${discPct.toFixed(1)}%)</span>`
+      : '₹ 0.00';
+
+    return `
+      <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
+        <td style="padding: 7px 6px; text-align: center; color: #4b5563; font-size: 10.5px;">${idx + 1}</td>
+        <td style="padding: 7px 6px; font-weight: 700; color: #111827; font-size: 10.5px;">${item.item_name}</td>
+        <td style="padding: 7px 6px; color: #4b5563; font-size: 10.5px;">${item.hsn_sac || ''}</td>
+        <td style="padding: 7px 6px; text-align: center; font-weight: 700; color: #111827; font-size: 10.5px;">${qty}</td>
+        <td style="padding: 7px 6px; text-align: right; color: #111827; font-size: 10.5px;">₹ ${unitPrice.toFixed(2)}</td>
+        <td style="padding: 7px 6px; text-align: right; color: #374151; font-size: 10.5px;">${discDisplay}</td>
+        <td style="padding: 7px 6px; text-align: right; font-weight: 700; color: #111827; font-size: 10.5px;">₹ ${lineTotal.toFixed(2)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${pdfTitle} - ${bill.bill_number}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm 10mm;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+    .invoice-container {
+      width: 100%;
+      background: #ffffff;
+      padding: 0;
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .business-name {
+      font-size: 24px;
+      font-weight: 900;
+      color: #0f172a;
+      letter-spacing: -0.025em;
+      margin: 0;
+      line-height: 1.1;
+    }
+    .business-sub {
+      font-size: 11px;
+      color: #475569;
+      margin: 2px 0 0 0;
+    }
+    .logo-box {
+      max-width: 160px;
+      max-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .logo-img {
+      max-height: 75px;
+      max-width: 150px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+    .title-banner {
+      border-top: 2px solid #2563EB;
+      border-bottom: 2px solid #2563EB;
+      padding: 4px 0;
+      margin: 10px 0 8px 0;
+      text-align: center;
+    }
+    .title-text {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: #2563EB;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin: 6px 0 8px 0;
+      font-size: 11px;
+    }
+    .info-label {
+      font-weight: 700;
+      color: #000000;
+      display: block;
+      margin-bottom: 2px;
+      font-size: 11px;
+    }
+    .customer-name {
+      font-weight: 600;
+      color: #111827;
+      margin: 0;
+      font-size: 11px;
+    }
+    .customer-sub {
+      color: #6b7280;
+      margin: 1px 0 0 0;
+      font-size: 10px;
+    }
+    .customer-email {
+      color: #1d4ed8;
+      margin: 1px 0 0 0;
+      font-size: 10.5px;
+      font-weight: 500;
+    }
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10.5px;
+      margin: 6px 0 8px 0;
+    }
+    .items-table th {
+      background-color: #2563EB;
+      color: #ffffff;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 9.5px;
+      letter-spacing: 0.025em;
+      padding: 7px 6px;
+    }
+    .items-table tfoot tr {
+      border-top: 2px solid #111827;
+      border-bottom: 1px solid #111827;
+      background-color: #ffffff;
+      font-weight: 700;
+    }
+    .items-table tfoot td {
+      padding: 7px 6px;
+      font-size: 10.5px;
+    }
+    .middle-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin: 8px 0 10px 0;
+      gap: 20px;
+    }
+    .middle-left {
+      width: 55%;
+    }
+    .middle-right {
+      width: 42%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .section-heading {
+      font-weight: 700;
+      color: #000000;
+      font-size: 10px;
+      text-transform: uppercase;
+      margin: 0 0 3px 0;
+    }
+    .words-text {
+      font-size: 10.5px;
+      color: #1f2937;
+      font-weight: 500;
+      margin: 0 0 8px 0;
+    }
+    .terms-text {
+      font-size: 9px;
+      color: #374151;
+      line-height: 1.35;
+      white-space: pre-line;
+      margin: 0 0 8px 0;
+    }
+    .qr-card {
+      display: inline-block;
+      padding: 7px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #ffffff;
+      text-align: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .qr-img {
+      width: 68px;
+      height: 68px;
+      display: block;
+      margin: 0 auto;
+    }
+    .qr-title {
+      margin-top: 4px;
+      font-size: 9.5px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: 0.025em;
+    }
+    .qr-upi {
+      font-size: 8px;
+      color: #475569;
+      font-family: monospace;
+      margin-top: 2px;
+      max-width: 110px;
+      word-break: break-all;
+      line-height: 1.2;
+    }
+    .summary-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 8px 10px;
+      background-color: #f9fafb;
+      font-size: 10px;
+    }
+    .summary-item {
+      display: flex;
+      justify-content: space-between;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    .summary-total-pill {
+      display: flex;
+      justify-content: space-between;
+      background-color: #2563EB;
+      color: #ffffff;
+      font-weight: 700;
+      padding: 5px 8px;
+      border-radius: 4px;
+      margin: 5px 0;
+      font-size: 11px;
+    }
+    .signature-container {
+      text-align: right;
+      margin-top: 16px;
+    }
+    .signature-for {
+      font-size: 10px;
+      color: #6b7280;
+      margin: 0;
+    }
+    .signature-person {
+      font-weight: 800;
+      font-size: 13px;
+      color: #0f172a;
+      margin: 6px 0 3px 0;
+      border-bottom: 2px solid #0f172a;
+      display: inline-block;
+      padding-bottom: 1px;
+    }
+    .signature-title {
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0;
+    }
+    .acknowledgment-box {
+      margin-top: 14px;
+      padding-top: 8px;
+      border-top: 1px dashed #9ca3af;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .ack-center {
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .ack-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #374151;
+      text-transform: uppercase;
+      display: block;
+    }
+    .ack-brand {
+      font-size: 12px;
+      font-weight: 700;
+      color: #2563EB;
+      margin: 2px 0 0 0;
+    }
+    .ack-columns {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-size: 10px;
+      margin-top: 3px;
+    }
+    .ack-tag {
+      color: #0B8A3E;
+      font-weight: 600;
+      font-size: 9px;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .ack-sign-line {
+      border-bottom: 1px dotted #9ca3af;
+      width: 120px;
+      margin-left: auto;
+      margin-bottom: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- 1. Header Row -->
+    <div class="header-row">
+      <div>
+        <h1 class="business-name">${bp?.business_name || 'Memotrix'}</h1>
+        ${bp?.address ? `<p class="business-sub">${bp.address}</p>` : ''}
+        <p class="business-sub">Phone: ${bp?.phone || '6384241882'} | Email: ${bp?.email || 'teammemotrix@gmail.com'}</p>
+        ${bp?.gstin ? `<p class="business-sub">GSTIN: ${bp.gstin}</p>` : ''}
+        ${bp?.website ? `<p class="business-sub">Website: ${bp.website}</p>` : ''}
+      </div>
+      <div class="logo-box">
+        <img src="${logoDataUri}" class="logo-img" alt="Business Logo" />
+      </div>
+    </div>
+
+    <!-- 2. Title Bar -->
+    <div class="title-banner">
+      <h2 class="title-text">${pdfTitle}</h2>
+    </div>
+
+    <!-- 3. Bill To / Invoice Details Row -->
+    <div class="info-row">
+      <div>
+        <span class="info-label">Bill To</span>
+        <p class="customer-name">${bill.customer_name}</p>
+        ${bill.customer_phone ? `<p class="customer-sub">${bill.customer_phone}</p>` : ''}
+        ${bill.customer_email ? `<p class="customer-email">${bill.customer_email}</p>` : ''}
+      </div>
+      <div style="text-align: right;">
+        <span class="info-label">Invoice Details</span>
+        <p class="customer-name">Date: ${bill.bill_date}</p>
+        ${bill.due_date ? `<p style="color: #b45309; font-size: 10px; font-weight: 500; margin: 1px 0 0 0;">Due Date: ${bill.due_date}</p>` : ''}
+      </div>
+    </div>
+
+    <!-- 4. Line Items Table -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="text-align: center; width: 30px;">#</th>
+          <th style="text-align: left;">ITEM NAME</th>
+          <th style="text-align: left; width: 85px;">HSN/ SAC</th>
+          <th style="text-align: center; width: 70px;">QUANTITY</th>
+          <th style="text-align: right; width: 90px;">PRICE/ UNIT</th>
+          <th style="text-align: right; width: 95px;">DISCOUNT</th>
+          <th style="text-align: right; width: 95px;">AMOUNT</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" style="text-align: left;">Total</td>
+          <td style="text-align: center;">${totalQty}</td>
+          <td></td>
+          <td style="text-align: right;">₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</td>
+          <td style="text-align: right; color: #2563EB; font-weight: 800;">₹ ${parseFloat(bill.grand_total).toFixed(2)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- 5. Middle Section (Words, Terms, QR & Summary, Sign) -->
+    <div class="middle-section">
+      <!-- Left Column -->
+      <div class="middle-left">
         <div>
-          <h1 class="business-title">${bp?.business_name || 'Memotrix'}</h1>
-          ${bp?.address ? `<p class="sub-text">${bp.address}</p>` : ''}
-          <p class="sub-text">Phone: ${bp?.phone || '6384241882'} | Email: ${bp?.email || 'teammemotrix@gmail.com'}</p>
-          ${bp?.gstin ? `<p class="sub-text">GSTIN: ${bp.gstin}</p>` : ''}
-          ${bp?.website ? `<p class="sub-text">Website: ${bp.website}</p>` : ''}
-        </div>
-        <div class="logo-container">
-          <img src="${logoDataUri}" class="logo-img" alt="Business Logo" />
-        </div>
-      </div>
-
-      <div class="title-bar">${pdfTitle}</div>
-
-      <div class="info-row">
-        <div class="info-block">
-          <strong>Bill To</strong>
-          <span style="font-weight: 700; font-size: 11px; color: #0f172a;">${bill.customer_name}</span>
-          ${bill.customer_phone ? `<br/><span style="color: #64748b;">Phone: ${bill.customer_phone}</span>` : ''}
-          ${bill.customer_email ? `<br/><span style="color: #1d4ed8;">Email: ${bill.customer_email}</span>` : ''}
-        </div>
-        <div class="info-block" style="text-align: right;">
-          <strong>Invoice Details</strong>
-          <span>Invoice No: <strong>${bill.bill_number}</strong></span><br/>
-          <span>Invoice Date: ${bill.bill_date}</span>
-          ${bill.due_date ? `<br/><span style="color: #b45309; font-weight: 700;">Due Date: ${bill.due_date}</span>` : ''}
-        </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 25px; text-align: center;">#</th>
-            <th>Item Name</th>
-            <th style="width: 75px;">HSN/ SAC</th>
-            <th style="width: 55px; text-align: center;">Quantity</th>
-            <th style="width: 80px; text-align: right;">Price/ Unit</th>
-            <th style="width: 85px; text-align: right;">Discount</th>
-            <th style="width: 85px; text-align: right;">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemsHtml}
-        </tbody>
-        <tfoot>
-          <tr class="table-footer">
-            <td colspan="3" style="padding-left: 6px;">Total</td>
-            <td style="text-align: center;">${totalQty}</td>
-            <td></td>
-            <td style="text-align: right;">₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</td>
-            <td style="text-align: right; font-size: 12px; color: #2563EB; font-weight: 800;">₹ ${parseFloat(bill.grand_total).toFixed(2)}</td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <div class="main-grid">
-        <div class="left-col">
-          <div style="margin-bottom: 8px;">
-            <div class="section-title">Invoice Amount In Words</div>
-            <div style="color: #0f172a; font-weight: 600; font-size: 10px;">${amountInWords}</div>
-          </div>
-
-          <div style="margin-bottom: 8px;">
-            <div class="section-title">Terms And Conditions</div>
-            <div class="terms-list">${tpl?.terms_and_conditions || ''}</div>
-          </div>
-
-          ${(upiQrDataUri && bp?.show_qr_code !== false) ? `
-            <div style="margin-top: 6px;">
-              <div style="display: inline-block; padding: 5px; border: 1px solid #e2e8f0; border-radius: 6px; text-align: center; background: #ffffff;">
-                <img src="${upiQrDataUri}" style="width: 75px; height: 75px; display: block; margin: 0 auto;" />
-                <div style="font-size: 8.5px; font-weight: 700; color: #1e293b; margin-top: 3px;">Scan & Pay</div>
-                ${bp?.show_upi_text !== false && bp?.upi_id ? `<div style="font-size: 7.5px; color: #475569; margin-top: 1px;">UPI ID: <strong>${bp.upi_id}</strong></div>` : ''}
-              </div>
-            </div>
-          ` : ''}
+          <h4 class="section-heading">INVOICE AMOUNT IN WORDS</h4>
+          <p class="words-text">${amountInWords}</p>
         </div>
 
-        <div class="right-col">
-          <div class="summary-box">
-            <div class="summary-row"><span>Sub Total</span><span>₹ ${parseFloat(bill.subtotal).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Discount</span><span>₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
-            <div class="summary-row total-bar"><span>Total</span><span>₹ ${parseFloat(bill.grand_total).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Received</span><span>₹ ${parseFloat(bill.received_amount || 0).toFixed(2)}</span></div>
-            <div class="summary-row"><span>Balance</span><span>₹ ${parseFloat(bill.balance_amount || 0).toFixed(2)}</span></div>
-            <div class="summary-row"><span>You Saved</span><span>₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span></div>
-          </div>
+        <div>
+          <h4 class="section-heading">TERMS AND CONDITIONS</h4>
+          <div class="terms-text">${tpl?.terms_and_conditions || 'Standard Terms'}</div>
+        </div>
 
-          <div class="signature-area">
-            <div style="font-size: 9.5px; color: #64748b;">For: ${bp?.business_name || 'Memotrix'}</div>
-            <div class="signature-name">${executedByName}</div>
-            <div class="signature-label">
-              ${tpl?.executed_by_label || 'Authorized Signatory'}
+        ${(upiQrDataUri && bp?.show_qr_code !== false) ? `
+          <div style="padding-top: 4px;">
+            <div class="qr-card">
+              <img src="${upiQrDataUri}" class="qr-img" alt="UPI QR Code" />
+              <div class="qr-title">Scan & Pay</div>
+              ${(bp?.show_upi_text !== false && bp?.upi_id) ? `
+                <div class="qr-upi">
+                  UPI ID: ${bp.upi_id}
+                </div>
+              ` : ''}
             </div>
           </div>
-        </div>
+        ` : ''}
       </div>
 
-      <div class="ack-section">
-        <div class="ack-header">
-          <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #64748b;">${tpl?.footer_content || 'Acknowledgment'}</div>
-          <div style="font-size: 11px; font-weight: 700; color: #2563EB;">${tpl?.disclaimer_text || bp?.business_name || 'Memotrix'}</div>
+      <!-- Right Column -->
+      <div class="middle-right">
+        <div class="summary-card">
+          <div class="summary-item">
+            <span>Sub Total</span>
+            <span style="font-weight: 500;">₹ ${parseFloat(bill.subtotal).toFixed(2)}</span>
+          </div>
+          <div class="summary-item">
+            <span>Discount</span>
+            <span style="font-weight: 500;">₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span>
+          </div>
+          <div class="summary-total-pill">
+            <span>Total</span>
+            <span>₹ ${parseFloat(bill.grand_total).toFixed(2)}</span>
+          </div>
+          <div class="summary-item" style="padding-top: 2px;">
+            <span>Received</span>
+            <span style="font-weight: 500;">₹ ${parseFloat(bill.received_amount || 0).toFixed(2)}</span>
+          </div>
+          <div class="summary-item">
+            <span>Balance</span>
+            <span style="font-weight: 500;">₹ ${parseFloat(bill.balance_amount || 0).toFixed(2)}</span>
+          </div>
+          <div class="summary-item">
+            <span>You Saved</span>
+            <span style="font-weight: 500;">₹ ${parseFloat(bill.discount_total || 0).toFixed(2)}</span>
+          </div>
         </div>
 
-        <div class="ack-grid">
-          <div>
-            <span style="color: #2563EB; font-weight: 700;">Invoice To:</span><br/>
-            <strong>${bill.customer_name}</strong>
-          </div>
-          <div>
-            <span style="color: #2563EB; font-weight: 700;">Invoice Details:</span><br/>
-            Invoice Date : ${bill.bill_date}<br/>
-            Invoice Amount : ₹ ${parseFloat(bill.grand_total).toFixed(2)}
-          </div>
-          <div style="text-align: right; display: flex; flex-direction: column; justify-content: flex-end;">
-            <div style="border-bottom: 1px dotted #94a3b8; width: 130px; margin-left: auto; margin-bottom: 3px;"></div>
-            <span style="font-size: 8.5px; color: #64748b;">Receiver's Seal & Sign</span>
-          </div>
+        <div class="signature-container">
+          <p class="signature-for">For: ${bp?.business_name || 'Memotrix'}</p>
+          <div class="signature-person">${executedByName}</div><br/>
+          <span class="signature-title">${tpl?.executed_by_label || 'AUTHORIZED SIGNATORY'}</span>
         </div>
       </div>
-    </body>
-    </html>
-  `;
+    </div>
+
+    <!-- 6. Acknowledgment Section -->
+    <div class="acknowledgment-box">
+      <div class="ack-center">
+        <span class="ack-title">${tpl?.footer_content || 'ACKNOWLEDGMENT'}</span>
+        <h3 class="ack-brand">${tpl?.disclaimer_text || bp?.business_name || 'Memotrix'}</h3>
+      </div>
+
+      <div class="ack-columns">
+        <div>
+          <span class="ack-tag">Invoice To:</span>
+          <p style="margin: 0; font-weight: 700; color: #111827; font-size: 10.5px;">${bill.customer_name}</p>
+        </div>
+        <div>
+          <span class="ack-tag">Invoice Details:</span>
+          <p style="margin: 0; color: #111827; font-size: 10px;">Invoice Date : ${bill.bill_date}</p>
+          <p style="margin: 2px 0 0 0; color: #111827; font-size: 10px;">Invoice Amount : ₹ ${parseFloat(bill.grand_total).toFixed(2)}</p>
+        </div>
+        <div style="text-align: right;">
+          <div class="ack-sign-line"></div>
+          <span style="font-size: 9px; color: #4b5563; font-weight: 500;">Receiver's Seal & Sign</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 /**
