@@ -5,7 +5,7 @@ import path from 'path';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { numberToWords } from '../services/numberToWords.js';
-import { buildUpiString, generateQrDataUri } from '../services/qrService.js';
+import { buildUpiString, generateQrDataUri, generateQrSvg } from '../services/qrService.js';
 import { generateInvoicePdf } from '../services/pdfService.js';
 import { sendLowStockAlert } from '../services/emailService.js';
 import { encrypt, decrypt } from '../services/cryptoService.js';
@@ -198,14 +198,16 @@ router.get('/:id', async (req, res) => {
     }));
 
     const amountInWords = numberToWords(bill.grand_total);
-    const upiString = bp?.upi_id ? buildUpiString({
-      upiId: bp.upi_id,
-      payeeName: bp.payee_name || bp.business_name || 'Memotrix',
+    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const upiString = buildUpiString({
+      upiId: effectiveUpiId,
+      payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
       amount: bill.grand_total,
-      currency: bp.currency || 'INR',
-      note: bp.default_transaction_note || bill.bill_number
-    }) : '';
+      currency: bp?.currency || 'INR',
+      note: bp?.default_transaction_note || bill.bill_number
+    });
     const upiQrDataUri = await generateQrDataUri(upiString);
+    const qrSvg = await generateQrSvg(upiString);
 
     return res.json({
       bill,
@@ -214,7 +216,8 @@ router.get('/:id', async (req, res) => {
       businessProfile: bp,
       templateSettings,
       amountInWords,
-      upiQrDataUri
+      upiQrDataUri,
+      qrSvg
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch bill details' });
@@ -569,9 +572,10 @@ function getLogoBase64DataUri(logoUrl) {
   }
 }
 
-function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
+export function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri, qrSvg = '') {
   const totalQty = items.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
   const executedByName = bill.executed_by || tpl?.executed_by_value || 'Authorized Signatory';
+  const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
   const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url || bp?.logo_url);
 
   let pdfTitle = 'TAX INVOICE';
@@ -980,14 +984,14 @@ function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri) {
           <div class="terms-text">${tpl?.terms_and_conditions || 'Standard Terms'}</div>
         </div>
 
-        ${(upiQrDataUri && bp?.show_qr_code !== false) ? `
+        ${(bp?.show_qr_code !== false && bp?.show_qr_code !== 0 && bp?.show_qr_code !== 'false') ? `
           <div style="padding-top: 4px;">
             <div class="qr-card">
-              <img src="${upiQrDataUri}" class="qr-img" alt="UPI QR Code" />
+              ${qrSvg ? `<div style="display: flex; justify-content: center; width: 75px; height: 75px; margin: 0 auto;">${qrSvg}</div>` : (upiQrDataUri ? `<img src="${upiQrDataUri}" class="qr-img" alt="UPI QR Code" />` : '')}
               <div class="qr-title">Scan & Pay</div>
-              ${(bp?.show_upi_text !== false && bp?.upi_id) ? `
+              ${(bp?.show_upi_text !== false && bp?.show_upi_text !== 0 && effectiveUpiId) ? `
                 <div class="qr-upi">
-                  UPI ID: ${bp.upi_id}
+                  UPI ID: ${effectiveUpiId}
                 </div>
               ` : ''}
             </div>
@@ -1075,17 +1079,20 @@ router.post('/:id/regenerate-pdf', async (req, res) => {
     const bp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const tpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const amountInWords = numberToWords(bill.grand_total);
-    const upiString = bp?.upi_id ? buildUpiString({
-      upiId: bp.upi_id,
-      payeeName: bp.payee_name || bp.business_name || 'Memotrix',
+    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const upiString = buildUpiString({
+      upiId: effectiveUpiId,
+      payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
       amount: bill.grand_total,
-      currency: bp.currency || 'INR',
-      note: bp.default_transaction_note || bill.bill_number
-    }) : '';
-    const upiQrDataUri = upiString ? await generateQrDataUri(upiString) : null;
+      currency: bp?.currency || 'INR',
+      note: bp?.default_transaction_note || bill.bill_number
+    });
+    const upiQrDataUri = await generateQrDataUri(upiString);
+    const qrSvg = await generateQrSvg(upiString);
 
-    const htmlContent = buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri);
-    const pdfBuf = await generateInvoicePdf(htmlContent);
+    const invoiceData = { bill, items, bp, tpl, amountInWords, upiQrDataUri, qrSvg };
+    const htmlContent = buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri, qrSvg);
+    const pdfBuf = await generateInvoicePdf(htmlContent, invoiceData);
 
     const targetFilePath = path.join(PDF_STORAGE_DIR, `${bill.bill_number}.pdf`);
     fs.writeFileSync(targetFilePath, pdfBuf);
@@ -1119,8 +1126,11 @@ router.get('/:id/pdf', async (req, res) => {
     const bill = await db.queryOne('SELECT * FROM bills WHERE (id = ? OR bill_number = ?) AND tenant_id = ?', [id, id, tenantId]);
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
 
+    // Allow forcing fresh regeneration via ?fresh=true or if requested
+    const forceFresh = req.query.fresh === 'true' || req.query.regenerate === 'true';
+
     // 1. Check if cached PDF already exists on disk
-    if (bill.pdf_path && fs.existsSync(bill.pdf_path)) {
+    if (!forceFresh && bill.pdf_path && fs.existsSync(bill.pdf_path)) {
       console.log(`[PDF CACHE HIT] Serving cached PDF for bill ${bill.bill_number} from ${bill.pdf_path}`);
       res.setHeader('Content-Type', 'application/pdf; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${bill.bill_number}.pdf"`);
@@ -1128,22 +1138,25 @@ router.get('/:id/pdf', async (req, res) => {
     }
 
     // 2. Generate PDF once and cache to disk
-    console.log(`[PDF CACHE MISS] Generating fresh PDF for bill ${bill.bill_number}...`);
+    console.log(`[PDF GENERATE] Generating fresh PDF with verified QR code for bill ${bill.bill_number}...`);
     const items = await db.query('SELECT * FROM bill_items WHERE bill_id = ?', [bill.id]);
     const bp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const tpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const amountInWords = numberToWords(bill.grand_total);
-    const upiString = bp?.upi_id ? buildUpiString({
-      upiId: bp.upi_id,
-      payeeName: bp.payee_name || bp.business_name || 'Memotrix',
+    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const upiString = buildUpiString({
+      upiId: effectiveUpiId,
+      payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
       amount: bill.grand_total,
-      currency: bp.currency || 'INR',
-      note: bp.default_transaction_note || bill.bill_number
-    }) : '';
-    const upiQrDataUri = upiString ? await generateQrDataUri(upiString) : null;
+      currency: bp?.currency || 'INR',
+      note: bp?.default_transaction_note || bill.bill_number
+    });
+    const upiQrDataUri = await generateQrDataUri(upiString);
+    const qrSvg = await generateQrSvg(upiString);
 
-    const htmlContent = buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri);
-    const pdfBuf = await generateInvoicePdf(htmlContent);
+    const invoiceData = { bill, items, bp, tpl, amountInWords, upiQrDataUri, qrSvg };
+    const htmlContent = buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataUri, qrSvg);
+    const pdfBuf = await generateInvoicePdf(htmlContent, invoiceData);
 
     const targetFilePath = path.join(PDF_STORAGE_DIR, `${bill.bill_number}.pdf`);
     fs.writeFileSync(targetFilePath, pdfBuf);

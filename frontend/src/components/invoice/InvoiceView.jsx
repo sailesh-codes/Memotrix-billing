@@ -23,25 +23,38 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
     disclaimer_text: 'Memotrix'
   };
 
+  const canvasRef = React.useRef(null);
   const [effectiveQrDataUri, setEffectiveQrDataUri] = useState(upiQrDataUri);
+  const [qrSvg, setQrSvg] = useState('');
+
+  const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+  const payeeName = bp?.payee_name || bp?.business_name || 'Memotrix';
+  const amount = parseFloat(bill?.grand_total || bill?.total_amount || 0).toFixed(2);
+  const note = bp?.default_transaction_note || bill?.bill_number || 'Invoice Payment';
+  const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
 
   useEffect(() => {
     let isMounted = true;
-    if (upiQrDataUri) {
-      setEffectiveQrDataUri(upiQrDataUri);
-    } else if (bp?.upi_id) {
-      const payeeName = encodeURIComponent(bp.payee_name || bp.business_name || 'Memotrix');
-      const amount = parseFloat(bill?.grand_total || bill?.total_amount || 0).toFixed(2);
-      const note = encodeURIComponent(bp.default_transaction_note || bill?.bill_number || 'Invoice Payment');
-      const upiUrl = `upi://pay?pa=${encodeURIComponent(bp.upi_id)}&pn=${payeeName}&am=${amount}&cu=INR&tn=${note}`;
-      QRCode.toDataURL(upiUrl, { margin: 1, width: 300 }, (err, url) => {
-        if (!err && url && isMounted) setEffectiveQrDataUri(url);
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, upiUrl, {
+        width: 180,
+        margin: 1,
+        color: { dark: '#000000', light: '#ffffff' }
+      }, (err) => {
+        if (err) console.error('[QR Canvas] Error:', err);
       });
-    } else {
-      setEffectiveQrDataUri(null);
     }
+
+    QRCode.toString(upiUrl, { type: 'svg', margin: 1, width: 80 }, (err, svg) => {
+      if (!err && svg && isMounted) setQrSvg(svg);
+    });
+
+    QRCode.toDataURL(upiUrl, { margin: 1, width: 300 }, (err, url) => {
+      if (!err && url && isMounted) setEffectiveQrDataUri(url);
+    });
+
     return () => { isMounted = false; };
-  }, [upiQrDataUri, bp, bill]);
+  }, [upiUrl]);
 
   if (!bill) return <div className="p-4 text-center text-gray-500">No invoice loaded</div>;
 
@@ -232,27 +245,6 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
             <span>JPG</span>
           </button>
 
-          {/* Direct Single-Page Vector PDF */}
-          <button
-            onClick={handleDownloadClientPdf}
-            className="px-3 py-2 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm transition flex items-center space-x-1 cursor-pointer"
-            title="Export guaranteed single-page PDF directly"
-          >
-            <FileText className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Instant PDF</span>
-          </button>
-
-          {onRegeneratePdf && (
-            <button
-              onClick={onRegeneratePdf}
-              className="px-3 py-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl shadow-sm transition flex items-center space-x-1 cursor-pointer"
-              title="Regenerate PDF Cache"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Regenerate PDF</span>
-            </button>
-          )}
-
           {onPrint && (
             <button
               onClick={onPrint}
@@ -263,15 +255,14 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
             </button>
           )}
 
-          {onDownloadPdf && (
-            <button
-              onClick={onDownloadPdf}
-              className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition flex items-center space-x-1 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download PDF</span>
-            </button>
-          )}
+          <button
+            onClick={handleDownloadClientPdf}
+            className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition flex items-center space-x-1 cursor-pointer"
+            title="Download crisp single-page PDF exactly as shown"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download PDF</span>
+          </button>
         </div>
       </div>
 
@@ -383,16 +374,18 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
           </div>
 
           {/* UPI QR Code */}
-          {effectiveQrDataUri && bp.show_qr_code !== false && (
+          {(bp.show_qr_code !== false && bp.show_qr_code !== 0 && bp.show_qr_code !== 'false') && (
             <div className="pt-2 print:pt-0.5">
               <div className="inline-block p-2 print:p-1 border border-gray-200 rounded-xl bg-white text-center shadow-xs">
-                <img src={effectiveQrDataUri} alt="UPI QR Code" className="w-20 h-20 print:w-14 print:h-14 mx-auto" />
-                <div className="mt-1 text-[10px] print:text-[8.5px] font-bold text-slate-900 tracking-wide">
+                <div className="w-20 h-20 print:w-14 print:h-14 mx-auto flex items-center justify-center overflow-hidden">
+                  <canvas ref={canvasRef} className="w-20 h-20 print:w-14 print:h-14 mx-auto block" />
+                </div>
+                <div className="mt-1 text-[10px] print:text-[8.5px] font-extrabold text-slate-900 tracking-wide">
                   Scan & Pay
                 </div>
-                {bp.show_upi_text !== false && bp.upi_id && (
-                  <div className="text-[9px] print:text-[7.5px] text-slate-600 font-mono mt-0.5 max-w-[120px] break-all leading-tight">
-                    UPI ID: <span className="font-bold">{bp.upi_id}</span>
+                {(bp.show_upi_text !== false && bp.show_upi_text !== 0) && (
+                  <div className="text-[9px] print:text-[7.5px] text-slate-700 font-mono mt-0.5 max-w-[125px] break-all leading-tight mx-auto">
+                    UPI ID: <span className="font-bold text-slate-900">{effectiveUpiId}</span>
                   </div>
                 )}
               </div>
