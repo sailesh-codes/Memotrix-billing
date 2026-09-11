@@ -987,7 +987,7 @@ export function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataU
         ${(bp?.show_qr_code !== false && bp?.show_qr_code !== 0 && bp?.show_qr_code !== 'false') ? `
           <div style="padding-top: 4px;">
             <div class="qr-card">
-              ${qrSvg ? `<div style="display: flex; justify-content: center; width: 75px; height: 75px; margin: 0 auto;">${qrSvg}</div>` : (upiQrDataUri ? `<img src="${upiQrDataUri}" class="qr-img" alt="UPI QR Code" />` : '')}
+              ${upiQrDataUri ? `<img src="${upiQrDataUri}" class="qr-img" alt="UPI QR Code" />` : (qrSvg ? `<div style="display: flex; justify-content: center; width: 75px; height: 75px; margin: 0 auto;">${qrSvg}</div>` : '')}
               <div class="qr-title">Scan & Pay</div>
               ${(bp?.show_upi_text !== false && bp?.show_upi_text !== 0 && effectiveUpiId) ? `
                 <div class="qr-upi">

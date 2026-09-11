@@ -378,7 +378,11 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
             <div className="pt-2 print:pt-0.5">
               <div className="inline-block p-2 print:p-1 border border-gray-200 rounded-xl bg-white text-center shadow-xs">
                 <div className="w-20 h-20 print:w-14 print:h-14 mx-auto flex items-center justify-center overflow-hidden">
-                  <canvas ref={canvasRef} className="w-20 h-20 print:w-14 print:h-14 mx-auto block" />
+                  {effectiveQrDataUri ? (
+                    <img src={effectiveQrDataUri} alt="UPI QR Code" className="w-20 h-20 print:w-14 print:h-14 mx-auto block object-contain" />
+                  ) : (
+                    <canvas ref={canvasRef} className="w-20 h-20 print:w-14 print:h-14 mx-auto block" />
+                  )}
                 </div>
                 <div className="mt-1 text-[10px] print:text-[8.5px] font-extrabold text-slate-900 tracking-wide">
                   Scan & Pay

@@ -49,7 +49,7 @@ export async function generatePdfKitInvoice(data = {}) {
   }
   if (!qrBuffer) {
     try {
-      qrBuffer = await QRCode.toBuffer(upiUrl, { margin: 1, width: 300 });
+      qrBuffer = await QRCode.toBuffer(upiUrl, { type: 'png', margin: 1, width: 300 });
     } catch (err) {
       console.error('[QR] Failed to generate QR buffer in PDFKit:', err.message);
     }
