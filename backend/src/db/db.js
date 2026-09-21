@@ -169,5 +169,5 @@ export default {
   query,
   queryOne,
   initDb,
-  isPg
+  get isPg() { return isPg; }
 };

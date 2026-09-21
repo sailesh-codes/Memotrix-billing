@@ -119,8 +119,14 @@ router.put('/payment-profile', async (req, res) => {
     return res.status(400).json({ error: 'UPI Payee ID cannot be empty.' });
   }
 
+  const trimmedUpi = upi_id.trim();
+  const lowerUpi = trimmedUpi.toLowerCase();
+  if (lowerUpi.endsWith('@gmail.com') || lowerUpi.endsWith('@yahoo.com') || lowerUpi.endsWith('@outlook.com') || lowerUpi.endsWith('@hotmail.com')) {
+    return res.status(400).json({ error: 'A valid bank UPI ID (VPA) is required (e.g. username@okicici, mobile@paytm). Email provider addresses like @gmail.com cannot process UPI payments.' });
+  }
+
   const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
-  if (!upiRegex.test(upi_id.trim())) {
+  if (!upiRegex.test(trimmedUpi)) {
     return res.status(400).json({ error: 'Invalid UPI Payee ID format. Expected format: username@bank' });
   }
 

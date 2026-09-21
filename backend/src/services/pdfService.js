@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import QRCode from 'qrcode';
+import { buildUpiString, sanitizeUpiId } from './qrService.js';
 
 let browserInstance = null;
 
@@ -33,12 +34,18 @@ async function getBrowser() {
 export async function generatePdfKitInvoice(data = {}) {
   const { bill = {}, items = [], bp = {}, tpl = {}, amountInWords = '', upiQrDataUri = null } = data;
 
-  // Ensure QR Code buffer is always generated
-  const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+  // Ensure QR Code buffer is always generated with valid unencoded UPI format
+  const effectiveUpiId = sanitizeUpiId(bp?.upi_id);
   const payeeName = bp?.payee_name || bp?.business_name || 'Memotrix';
   const amount = parseFloat(bill?.grand_total || bill?.total_amount || 0).toFixed(2);
   const note = bp?.default_transaction_note || bill?.bill_number || 'Invoice Payment';
-  const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+  const upiUrl = buildUpiString({
+    upiId: effectiveUpiId,
+    payeeName,
+    amount,
+    currency: bp?.currency || 'INR',
+    note
+  });
 
   let qrBuffer = null;
   if (upiQrDataUri && typeof upiQrDataUri === 'string' && upiQrDataUri.startsWith('data:image/')) {
@@ -49,7 +56,7 @@ export async function generatePdfKitInvoice(data = {}) {
   }
   if (!qrBuffer) {
     try {
-      qrBuffer = await QRCode.toBuffer(upiUrl, { type: 'png', margin: 1, width: 300 });
+      qrBuffer = await QRCode.toBuffer(upiUrl, { type: 'png', margin: 1, width: 300, errorCorrectionLevel: 'M' });
     } catch (err) {
       console.error('[QR] Failed to generate QR buffer in PDFKit:', err.message);
     }
@@ -245,16 +252,18 @@ export async function generatePdfKitInvoice(data = {}) {
       if (showQr && qrBuffer) {
         const qrCardW = 90;
         const qrCardH = 95;
-        doc.roundedRect(left, curLeftY, qrCardW, qrCardH, 8).lineWidth(0.8).strokeColor('#E5E7EB').stroke();
+        // Clamp qrCardY so it never collides with acknowledgment section (ackY = 730)
+        const qrCardY = Math.min(curLeftY, 730 - qrCardH - 10);
+        doc.roundedRect(left, qrCardY, qrCardW, qrCardH, 8).lineWidth(0.8).strokeColor('#E5E7EB').stroke();
         try {
-          doc.image(qrBuffer, left + 15, curLeftY + 8, { width: 60, height: 60 });
+          doc.image(qrBuffer, left + 15, qrCardY + 8, { width: 60, height: 60 });
         } catch (e) {
           console.error('[PDF] Failed to draw QR image:', e.message);
         }
-        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A').text('Scan & Pay', left, curLeftY + 70, { width: qrCardW, align: 'center' });
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0F172A').text('Scan & Pay', left, qrCardY + 70, { width: qrCardW, align: 'center' });
         const showUpiText = bp?.show_upi_text !== false && bp?.show_upi_text !== 0;
         if (showUpiText && effectiveUpiId) {
-          doc.font('Helvetica').fontSize(6.5).fillColor('#475569').text(`UPI ID: ${effectiveUpiId}`, left + 4, curLeftY + 80, { width: qrCardW - 8, align: 'center' });
+          doc.font('Helvetica').fontSize(6.5).fillColor('#475569').text(`UPI ID: ${effectiveUpiId}`, left + 4, qrCardY + 80, { width: qrCardW - 8, align: 'center' });
         }
       }
 
@@ -274,13 +283,13 @@ export async function generatePdfKitInvoice(data = {}) {
         sy += 13;
       };
 
-      drawSummaryRow('Sub Total', parseFloat(bill.subtotal).toFixed(2));
+      drawSummaryRow('Sub Total', parseFloat(bill.subtotal || 0).toFixed(2));
       drawSummaryRow('Discount', parseFloat(bill.discount_total || 0).toFixed(2));
 
       // Blue total pill
       doc.roundedRect(sLeft - 2, sy - 1, sRightW + 4, 16, 3).fill('#2563EB');
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#FFFFFF').text('Total', sLeft + 2, sy + 3);
-      doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#FFFFFF').text(`₹ ${parseFloat(bill.grand_total).toFixed(2)}`, sLeft, sy + 3, { width: sRightW - 2, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#FFFFFF').text(`₹ ${parseFloat(bill.grand_total || 0).toFixed(2)}`, sLeft, sy + 3, { width: sRightW - 2, align: 'right' });
       sy += 20;
 
       drawSummaryRow('Received', parseFloat(bill.received_amount || 0).toFixed(2));
@@ -313,7 +322,7 @@ export async function generatePdfKitInvoice(data = {}) {
       // Col 2: Invoice Details
       doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#0B8A3E').text('Invoice Details:', left + col3W, ackRowY);
       doc.font('Helvetica').fontSize(8).fillColor('#111827').text(`Invoice Date : ${bill.bill_date}`, left + col3W, ackRowY + 10);
-      doc.font('Helvetica').fontSize(8).fillColor('#111827').text(`Invoice Amount : ₹ ${parseFloat(bill.grand_total).toFixed(2)}`, left + col3W, ackRowY + 20);
+      doc.font('Helvetica').fontSize(8).fillColor('#111827').text(`Invoice Amount : ₹ ${parseFloat(bill.grand_total || 0).toFixed(2)}`, left + col3W, ackRowY + 20);
 
       // Col 3: Seal & Sign
       doc.moveTo(right - 100, ackRowY + 22).lineTo(right, ackRowY + 22).dash(1, { space: 2 }).lineWidth(0.8).strokeColor('#9CA3AF').stroke().undash();
@@ -328,13 +337,19 @@ export async function generatePdfKitInvoice(data = {}) {
 
 /**
  * Generate invoice PDF.
- * Automatically chooses between Playwright (for local high-res rendering)
- * and pure vector PDFKit (for Vercel serverless / lightweight production environments).
+ * Automatically chooses between pure vector PDFKit (for Vercel serverless / lightweight production environments)
+ * and Playwright (for local Chromium rendering).
  */
 export async function generateInvoicePdf(htmlContent, invoiceData = null) {
-  // On Vercel serverless, Chromium is not available. Use vector PDFKit generator directly.
-  if (process.env.VERCEL && invoiceData) {
-    return generatePdfKitInvoice(invoiceData);
+  // Prioritize pure vector PDFKit whenever structured invoiceData is provided.
+  // Vector PDFKit generates in ~5ms with zero external browser dependencies,
+  // perfect vector clarity, guaranteed QR embedding, and zero timeout risk.
+  if (invoiceData) {
+    try {
+      return await generatePdfKitInvoice(invoiceData);
+    } catch (err) {
+      console.warn('[PDF SERVICE] PDFKit generator error, attempting Playwright fallback:', err.message);
+    }
   }
 
   try {
@@ -342,7 +357,7 @@ export async function generateInvoicePdf(htmlContent, invoiceData = null) {
     const page = await browser.newPage();
 
     await page.setViewportSize({ width: 794, height: 1123 });
-    await page.setContent(htmlContent, { waitUntil: 'load', timeout: 15000 });
+    await page.setContent(htmlContent, { waitUntil: 'load', timeout: 8000 });
 
     const pdfBuffer = await page.pdf({
       format: 'A4',

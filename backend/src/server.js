@@ -70,7 +70,7 @@ app.use(async (req, res, next) => {
 });
 
 const isVercel = !!process.env.VERCEL;
-const publicDir = path.join(process.cwd(), 'public');
+const publicDir = path.join(__dirname, '..', 'public');
 const assetsDir = path.join(__dirname, '..', 'assets');
 const uploadsDir = isVercel ? path.join('/tmp', 'uploads') : path.join(publicDir, 'uploads');
 

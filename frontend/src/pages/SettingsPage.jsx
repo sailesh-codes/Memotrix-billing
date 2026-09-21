@@ -322,15 +322,21 @@ export function SettingsPage() {
       showToast('UPI Payee ID cannot be empty.', 'warning');
       return;
     }
+    const trimmedUpi = upiId.trim();
+    const lowerUpi = trimmedUpi.toLowerCase();
+    if (lowerUpi.endsWith('@gmail.com') || lowerUpi.endsWith('@yahoo.com') || lowerUpi.endsWith('@outlook.com') || lowerUpi.endsWith('@hotmail.com')) {
+      showToast('A valid bank UPI ID (VPA) is required (e.g. username@okicici, mobile@paytm). Email provider addresses like @gmail.com cannot process UPI payments.', 'error');
+      return;
+    }
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
-    if (!upiRegex.test(upiId.trim())) {
+    if (!upiRegex.test(trimmedUpi)) {
       showToast('Invalid UPI Payee ID format (e.g. username@bank).', 'error');
       return;
     }
 
     try {
       await settingsApi.updatePaymentProfile({
-        upi_id: upiId.trim(),
+        upi_id: trimmedUpi,
         payee_name: payeeName || businessName || 'Memotrix',
         merchant_name: merchantName || '',
         currency: currency || 'INR',
@@ -351,8 +357,14 @@ export function SettingsPage() {
       showToast('Please enter a valid UPI Payee ID first.', 'warning');
       return;
     }
+    const trimmedUpi = upiId.trim();
+    const lowerUpi = trimmedUpi.toLowerCase();
+    if (lowerUpi.endsWith('@gmail.com') || lowerUpi.endsWith('@yahoo.com') || lowerUpi.endsWith('@outlook.com') || lowerUpi.endsWith('@hotmail.com')) {
+      showToast('A valid bank UPI ID (VPA) is required (e.g. username@okicici, mobile@paytm).', 'error');
+      return;
+    }
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
-    if (!upiRegex.test(upiId.trim())) {
+    if (!upiRegex.test(trimmedUpi)) {
       showToast('Invalid UPI Payee ID format (e.g. username@bank).', 'error');
       return;
     }

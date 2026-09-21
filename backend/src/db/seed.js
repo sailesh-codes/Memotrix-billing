@@ -61,13 +61,20 @@ export async function seedDatabase() {
         '33',
         '33AAAAA0000A1Z5',
         false,
-        'teammemotrix@gmail.com',
+        'viyasviyas82@okicici',
         '/logo-default.png'
       ]
     );
   } else {
     await db.query(`UPDATE business_profile SET email = 'teammemotrix@gmail.com' WHERE id = ?`, [existingBp.id]);
   }
+
+  // Ensure UPI ID is never an email address (auto-correct any legacy @gmail.com UPI IDs)
+  await db.query(
+    `UPDATE business_profile 
+     SET upi_id = 'viyasviyas82@okicici' 
+     WHERE upi_id = 'teammemotrix@gmail.com' OR upi_id LIKE '%@gmail.com' OR upi_id IS NULL OR upi_id = ''`
+  );
 
   // 5. Seed Bill Template Settings
   const existingTpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ?', ['tenant-memotrix-01']);
@@ -192,7 +199,7 @@ export async function seedDatabase() {
   console.log('[SEED] Single Permanent Admin Seeding Complete!');
 }
 
-if (process.argv[1].endsWith('seed.js')) {
+if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
   seedDatabase().then(() => process.exit(0)).catch((err) => {
     console.error('[SEED] Seed failed:', err);
     process.exit(1);

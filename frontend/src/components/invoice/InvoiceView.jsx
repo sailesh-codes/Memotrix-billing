@@ -24,34 +24,72 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
   };
 
   const canvasRef = React.useRef(null);
-  const [effectiveQrDataUri, setEffectiveQrDataUri] = useState(upiQrDataUri);
+  const [effectiveQrDataUri, setEffectiveQrDataUri] = useState(upiQrDataUri || '');
   const [qrSvg, setQrSvg] = useState('');
 
-  const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
-  const payeeName = bp?.payee_name || bp?.business_name || 'Memotrix';
-  const amount = parseFloat(bill?.grand_total || bill?.total_amount || 0).toFixed(2);
-  const note = bp?.default_transaction_note || bill?.bill_number || 'Invoice Payment';
-  const upiUrl = `upi://pay?pa=${encodeURIComponent(effectiveUpiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+  const sanitizeUpi = (rawUpi) => {
+    if (!rawUpi || typeof rawUpi !== 'string') return 'viyasviyas82@okicici';
+    const cleaned = rawUpi.trim();
+    if (!cleaned || cleaned.includes('@gmail.com') || cleaned.includes('@yahoo.') || cleaned.includes('@outlook.') || cleaned.includes('@hotmail.') || !cleaned.includes('@')) {
+      return 'viyasviyas82@okicici';
+    }
+    return cleaned;
+  };
+
+  const effectiveUpiId = sanitizeUpi(bp?.upi_id);
+  const payeeName = (bp?.payee_name || bp?.business_name || 'Memotrix').trim();
+  const numAmount = parseFloat(bill?.grand_total || bill?.total_amount || 0);
+  const note = (bp?.default_transaction_note || bill?.bill_number || 'Invoice Payment').trim();
+
+  // NPCI standard UPI payment link: Keep @ unencoded in pa field!
+  let upiUrl = `upi://pay?pa=${effectiveUpiId}&pn=${encodeURIComponent(payeeName)}&cu=INR&tn=${encodeURIComponent(note)}`;
+  if (numAmount > 0) {
+    upiUrl += `&am=${numAmount.toFixed(2)}`;
+  }
+
+  // Synchronize effectiveQrDataUri when upiQrDataUri prop changes
+  useEffect(() => {
+    if (upiQrDataUri) {
+      setEffectiveQrDataUri(upiQrDataUri);
+    }
+  }, [upiQrDataUri]);
 
   useEffect(() => {
     let isMounted = true;
+
+    // 1. Generate high-resolution PNG Data URI immediately
+    QRCode.toDataURL(upiUrl, {
+      margin: 1,
+      width: 320,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' }
+    }).then((url) => {
+      if (isMounted && url) {
+        setEffectiveQrDataUri(url);
+      }
+    }).catch(err => console.error('[QR] Error generating data URI:', err));
+
+    // 2. Generate SVG format as secondary fallback
+    QRCode.toString(upiUrl, {
+      type: 'svg',
+      margin: 1,
+      width: 80,
+      errorCorrectionLevel: 'M'
+    }, (err, svg) => {
+      if (!err && svg && isMounted) setQrSvg(svg);
+    });
+
+    // 3. Render directly onto local canvas ref
     if (canvasRef.current) {
       QRCode.toCanvas(canvasRef.current, upiUrl, {
         width: 180,
         margin: 1,
+        errorCorrectionLevel: 'M',
         color: { dark: '#000000', light: '#ffffff' }
       }, (err) => {
         if (err) console.error('[QR Canvas] Error:', err);
       });
     }
-
-    QRCode.toString(upiUrl, { type: 'svg', margin: 1, width: 80 }, (err, svg) => {
-      if (!err && svg && isMounted) setQrSvg(svg);
-    });
-
-    QRCode.toDataURL(upiUrl, { margin: 1, width: 300 }, (err, url) => {
-      if (!err && url && isMounted) setEffectiveQrDataUri(url);
-    });
 
     return () => { isMounted = false; };
   }, [upiUrl]);
@@ -79,6 +117,14 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
         await document.fonts.ready;
       }
 
+      // Ensure QR data URI is ready before taking snapshot
+      if (!effectiveQrDataUri) {
+        try {
+          const freshQr = await QRCode.toDataURL(upiUrl, { margin: 1, width: 320, errorCorrectionLevel: 'M' });
+          setEffectiveQrDataUri(freshQr);
+        } catch (e) {}
+      }
+
       const images = element.getElementsByTagName('img');
       await Promise.all(Array.from(images).map(img => {
         if (img.complete) return Promise.resolve();
@@ -91,9 +137,23 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
       const canvas = await html2canvas(element, {
         scale: 4,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#ffffff',
-        logging: false
+        logging: false,
+        onclone: (clonedDoc) => {
+          // Synchronize canvas drawings from live DOM to cloned DOM
+          const originalCanvases = element.querySelectorAll('canvas');
+          const clonedCanvases = clonedDoc.querySelectorAll('canvas');
+          originalCanvases.forEach((orig, idx) => {
+            const cloned = clonedCanvases[idx];
+            if (cloned && orig.width && orig.height) {
+              cloned.width = orig.width;
+              cloned.height = orig.height;
+              const ctx = cloned.getContext('2d');
+              if (ctx) ctx.drawImage(orig, 0, 0);
+            }
+          });
+        }
       });
 
       const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
@@ -114,15 +174,33 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
   };
 
   const handleDownloadClientPdf = async () => {
+    // 1. If onDownloadPdf is available (InvoiceDetailsPage), trigger the official server vector PDF download
+    if (onDownloadPdf) {
+      try {
+        await onDownloadPdf();
+        return;
+      } catch (err) {
+        console.warn('Server PDF download encountered issue, using client export fallback:', err.message);
+      }
+    }
+
     const element = document.getElementById('invoice-render-card');
     if (!element) return;
 
     try {
-      showToast('Generating single-page vector PDF...', 'info');
+      showToast('Generating single-page PDF...', 'info');
 
       // Preload all fonts and images
       if (document.fonts && document.fonts.ready) {
         await document.fonts.ready;
+      }
+
+      // Ensure QR data URI is ready
+      if (!effectiveQrDataUri) {
+        try {
+          const freshQr = await QRCode.toDataURL(upiUrl, { margin: 1, width: 320, errorCorrectionLevel: 'M' });
+          setEffectiveQrDataUri(freshQr);
+        } catch (e) {}
       }
 
       const images = element.getElementsByTagName('img');
@@ -137,12 +215,27 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
       const canvas = await html2canvas(element, {
         scale: 3,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#ffffff',
-        logging: false
+        logging: false,
+        onclone: (clonedDoc) => {
+          // Synchronize canvas drawings from live DOM to cloned DOM
+          const originalCanvases = element.querySelectorAll('canvas');
+          const clonedCanvases = clonedDoc.querySelectorAll('canvas');
+          originalCanvases.forEach((orig, idx) => {
+            const cloned = clonedCanvases[idx];
+            if (cloned && orig.width && orig.height) {
+              cloned.width = orig.width;
+              cloned.height = orig.height;
+              const ctx = cloned.getContext('2d');
+              if (ctx) ctx.drawImage(orig, 0, 0);
+            }
+          });
+        }
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      // Lossless PNG preserves sharp, crisp QR modules without JPEG DCT artifacts
+      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -163,20 +256,16 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
         const scaledWidth = imgWidth * scaleFactor;
         const scaledHeight = printableHeight;
         const xOffset = margin + ((printableWidth - scaledWidth) / 2);
-        pdf.addImage(imgData, 'JPEG', xOffset, margin, scaledWidth, scaledHeight, undefined, 'FAST');
+        pdf.addImage(imgData, 'PNG', xOffset, margin, scaledWidth, scaledHeight, undefined, 'FAST');
       } else {
-        pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
+        pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
       }
 
       pdf.save(`Invoice_${bill.bill_number}.pdf`);
       showToast(`Downloaded Single-Page PDF Invoice_${bill.bill_number}.pdf`, 'success');
     } catch (err) {
-      console.error('Client PDF export error:', err);
-      if (onDownloadPdf) {
-        onDownloadPdf();
-      } else {
-        showToast('Failed to export PDF', 'error');
-      }
+      console.warn('Client PDF export encountered error:', err.message);
+      showToast('Failed to export PDF', 'error');
     }
   };
 
@@ -280,8 +369,9 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
         </div>
         <div className="flex items-center justify-end max-w-[160px] max-h-[80px] print:max-w-[120px] print:max-h-[50px]">
           <img
-            src={bp.logo_original_url || bp.logo_url || '/logo-default.png'}
+            src={bp.logo_data_uri || bp.logo_original_url || bp.logo_url || '/logo-default.png'}
             alt="Business Logo"
+            crossOrigin="anonymous"
             className="max-h-[80px] max-w-[160px] print:max-h-[50px] print:max-w-[120px] w-auto h-auto object-contain flex-shrink-0 bg-transparent"
           />
         </div>
@@ -377,11 +467,23 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
           {(bp.show_qr_code !== false && bp.show_qr_code !== 0 && bp.show_qr_code !== 'false') && (
             <div className="pt-2 print:pt-0.5">
               <div className="inline-block p-2 print:p-1 border border-gray-200 rounded-xl bg-white text-center shadow-xs">
-                <div className="w-20 h-20 print:w-14 print:h-14 mx-auto flex items-center justify-center overflow-hidden">
+                <div className="w-20 h-20 print:w-16 print:h-16 mx-auto flex items-center justify-center bg-white overflow-hidden">
                   {effectiveQrDataUri ? (
-                    <img src={effectiveQrDataUri} alt="UPI QR Code" className="w-20 h-20 print:w-14 print:h-14 mx-auto block object-contain" />
+                    <img
+                      src={effectiveQrDataUri}
+                      alt="UPI QR Code"
+                      width={80}
+                      height={80}
+                      className="w-20 h-20 print:w-16 print:h-16 block"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
                   ) : (
-                    <canvas ref={canvasRef} className="w-20 h-20 print:w-14 print:h-14 mx-auto block" />
+                    <canvas
+                      ref={canvasRef}
+                      width={80}
+                      height={80}
+                      className="w-20 h-20 print:w-16 print:h-16 block"
+                    />
                   )}
                 </div>
                 <div className="mt-1 text-[10px] print:text-[8.5px] font-extrabold text-slate-900 tracking-wide">

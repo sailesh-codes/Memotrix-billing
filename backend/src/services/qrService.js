@@ -1,11 +1,26 @@
 import QRCode from 'qrcode';
 
+export function sanitizeUpiId(rawUpi) {
+  if (!rawUpi || typeof rawUpi !== 'string') return 'viyasviyas82@okicici';
+  const cleaned = rawUpi.trim();
+  if (!cleaned || cleaned.includes('@gmail.com') || cleaned.includes('@yahoo.') || cleaned.includes('@outlook.') || cleaned.includes('@hotmail.') || !cleaned.includes('@')) {
+    return 'viyasviyas82@okicici';
+  }
+  return cleaned;
+}
+
 export function buildUpiString({ upiId, payeeName, amount, currency = 'INR', note }) {
-  const effectiveUpiId = upiId || 'viyasviyas82@okicici';
-  const cleanAmount = parseFloat(amount || 0).toFixed(2);
-  const encodedName = encodeURIComponent(payeeName || 'Memotrix');
-  const encodedNote = encodeURIComponent(note || 'Invoice Payment');
-  return `upi://pay?pa=${effectiveUpiId}&pn=${encodedName}&am=${cleanAmount}&cu=${currency || 'INR'}&tn=${encodedNote}`;
+  const effectiveUpiId = sanitizeUpiId(upiId);
+  const numAmount = parseFloat(amount || 0);
+  const encodedName = encodeURIComponent((payeeName || 'Memotrix').trim());
+  const encodedNote = encodeURIComponent((note || 'Invoice Payment').trim());
+  const cleanCurrency = (currency || 'INR').trim();
+
+  let upiUrl = `upi://pay?pa=${effectiveUpiId}&pn=${encodedName}&cu=${cleanCurrency}&tn=${encodedNote}`;
+  if (numAmount > 0) {
+    upiUrl += `&am=${numAmount.toFixed(2)}`;
+  }
+  return upiUrl;
 }
 
 export async function generateQrDataUri(text) {
@@ -61,6 +76,7 @@ export async function generateQrBuffer(text) {
 }
 
 export default {
+  sanitizeUpiId,
   buildUpiString,
   generateQrDataUri,
   generateQrSvg,

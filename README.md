@@ -54,24 +54,35 @@ Production-ready bill/receipt generator and business management web application 
 
 ## 🚀 Setup & Local Execution Guide
 
-### Option A: Standalone Local Mode (Node.js & SQLite embedded fallback)
+### Option A: Quick Start (Single Command from Root)
 
-1. **Install Backend Dependencies & Seed Database**:
+Run both Backend API and Frontend concurrently with one command:
+```bash
+npm run dev
+```
+- Frontend Web App: `http://localhost:5189`
+- Backend REST API: `http://localhost:5000`
+- Log in with username `admin` and password `Admin@123456!`
+
+---
+
+### Option B: Separate Local Mode
+
+1. **Backend**:
    ```bash
    cd backend
    npm install
-   npm run seed
-   npm start
+   npm run dev
    ```
    Backend API runs on `http://localhost:5000`.
 
-2. **Install Frontend Dependencies & Start Dev Server**:
+2. **Frontend**:
    ```bash
-   cd ../frontend
+   cd frontend
    npm install
    npm run dev
    ```
-   Frontend App opens on `http://localhost:5173`. Log in with username `admin` and password `Admin@123456!`.
+   Frontend App opens on `http://localhost:5189`.
 
 ---
 

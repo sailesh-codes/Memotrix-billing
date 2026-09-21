@@ -5,7 +5,7 @@ import path from 'path';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { numberToWords } from '../services/numberToWords.js';
-import { buildUpiString, generateQrDataUri, generateQrSvg } from '../services/qrService.js';
+import { buildUpiString, sanitizeUpiId, generateQrDataUri, generateQrSvg } from '../services/qrService.js';
 import { generateInvoicePdf } from '../services/pdfService.js';
 import { sendLowStockAlert } from '../services/emailService.js';
 import { encrypt, decrypt } from '../services/cryptoService.js';
@@ -198,7 +198,7 @@ router.get('/:id', async (req, res) => {
     }));
 
     const amountInWords = numberToWords(bill.grand_total);
-    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const effectiveUpiId = sanitizeUpiId(bp?.upi_id);
     const upiString = buildUpiString({
       upiId: effectiveUpiId,
       payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
@@ -208,6 +208,11 @@ router.get('/:id', async (req, res) => {
     });
     const upiQrDataUri = await generateQrDataUri(upiString);
     const qrSvg = await generateQrSvg(upiString);
+    const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url || bp?.logo_url);
+    if (bp) {
+      bp.logo_data_uri = logoDataUri;
+      bp.upi_id = effectiveUpiId;
+    }
 
     return res.json({
       bill,
@@ -378,7 +383,8 @@ router.post('/', async (req, res) => {
     });
 
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to generate product billing invoice' });
+    console.error('[BILLS ERROR] Failed to generate invoice:', err);
+    return res.status(500).json({ error: err.message || 'Failed to generate product billing invoice' });
   }
 });
 
@@ -1079,7 +1085,7 @@ router.post('/:id/regenerate-pdf', async (req, res) => {
     const bp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const tpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const amountInWords = numberToWords(bill.grand_total);
-    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const effectiveUpiId = sanitizeUpiId(bp?.upi_id);
     const upiString = buildUpiString({
       upiId: effectiveUpiId,
       payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
@@ -1095,18 +1101,23 @@ router.post('/:id/regenerate-pdf', async (req, res) => {
     const pdfBuf = await generateInvoicePdf(htmlContent, invoiceData);
 
     const targetFilePath = path.join(PDF_STORAGE_DIR, `${bill.bill_number}.pdf`);
-    fs.writeFileSync(targetFilePath, pdfBuf);
-
-    await db.query(
-      `UPDATE bills SET pdf_path = ?, pdf_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [targetFilePath, bill.id]
-    );
-
-    await db.query(
-      `INSERT INTO bill_audit_logs (id, tenant_id, bill_id, action, changes_json, admin_id)
-       VALUES (?, ?, ?, 'pdf_regenerated', ?, ?)`,
-      [`audit-${Date.now()}`, tenantId, bill.id, JSON.stringify({ pdf_path: targetFilePath }), req.user.id]
-    );
+    try {
+      if (!fs.existsSync(PDF_STORAGE_DIR)) {
+        fs.mkdirSync(PDF_STORAGE_DIR, { recursive: true });
+      }
+      fs.writeFileSync(targetFilePath, pdfBuf);
+      await db.query(
+        `UPDATE bills SET pdf_path = ?, pdf_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [targetFilePath, bill.id]
+      );
+      await db.query(
+        `INSERT INTO bill_audit_logs (id, tenant_id, bill_id, action, changes_json, admin_id)
+         VALUES (?, ?, ?, 'pdf_regenerated', ?, ?)`,
+        [`audit-${Date.now()}`, tenantId, bill.id, JSON.stringify({ pdf_path: targetFilePath }), req.user.id]
+      );
+    } catch (cacheErr) {
+      console.warn('[PDF CACHE] Disk cache write failed (continuing):', cacheErr.message);
+    }
 
     return res.json({ message: 'PDF regenerated successfully', pdf_path: targetFilePath });
   } catch (err) {
@@ -1143,7 +1154,7 @@ router.get('/:id/pdf', async (req, res) => {
     const bp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const tpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const amountInWords = numberToWords(bill.grand_total);
-    const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
+    const effectiveUpiId = sanitizeUpiId(bp?.upi_id);
     const upiString = buildUpiString({
       upiId: effectiveUpiId,
       payeeName: bp?.payee_name || bp?.business_name || 'Memotrix',
@@ -1159,12 +1170,18 @@ router.get('/:id/pdf', async (req, res) => {
     const pdfBuf = await generateInvoicePdf(htmlContent, invoiceData);
 
     const targetFilePath = path.join(PDF_STORAGE_DIR, `${bill.bill_number}.pdf`);
-    fs.writeFileSync(targetFilePath, pdfBuf);
-
-    await db.query(
-      `UPDATE bills SET pdf_path = ?, pdf_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [targetFilePath, bill.id]
-    );
+    try {
+      if (!fs.existsSync(PDF_STORAGE_DIR)) {
+        fs.mkdirSync(PDF_STORAGE_DIR, { recursive: true });
+      }
+      fs.writeFileSync(targetFilePath, pdfBuf);
+      await db.query(
+        `UPDATE bills SET pdf_path = ?, pdf_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [targetFilePath, bill.id]
+      );
+    } catch (cacheErr) {
+      console.warn('[PDF CACHE] Disk cache write failed (continuing with stream):', cacheErr.message);
+    }
 
     res.setHeader('Content-Type', 'application/pdf; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${bill.bill_number}.pdf"`);
