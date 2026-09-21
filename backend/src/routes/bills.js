@@ -919,7 +919,7 @@ export function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataU
     <div class="header-row">
       <div>
         <h1 class="business-name">${bp?.business_name || 'Memotrix'}</h1>
-        ${bp?.address ? `<p class="business-sub">${bp.address}</p>` : ''}
+        ${(bp?.address && bp.address.trim() && !bp.address.includes('Salem') && bp.address.trim().toLowerCase() !== (bp?.business_name || 'Memotrix').trim().toLowerCase()) ? `<p class="business-sub">${bp.address.trim()}</p>` : ''}
         <p class="business-sub">Phone: ${bp?.phone || '6384241882'} | Email: ${bp?.email || 'teammemotrix@gmail.com'}</p>
         ${bp?.gstin ? `<p class="business-sub">GSTIN: ${bp.gstin}</p>` : ''}
         ${bp?.website ? `<p class="business-sub">Website: ${bp.website}</p>` : ''}

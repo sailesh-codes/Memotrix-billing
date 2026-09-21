@@ -57,7 +57,7 @@ export async function seedDatabase() {
         'Gifts & Custom Photo Frames',
         '6384241882',
         'teammemotrix@gmail.com',
-        'Memotrix Studio, Salem, Tamil Nadu - 636001',
+        '',
         '33',
         '33AAAAA0000A1Z5',
         false,
@@ -68,6 +68,13 @@ export async function seedDatabase() {
   } else {
     await db.query(`UPDATE business_profile SET email = 'teammemotrix@gmail.com' WHERE id = ?`, [existingBp.id]);
   }
+
+  // Clear any legacy address containing Salem/Memotrix Studio
+  await db.query(
+    `UPDATE business_profile 
+     SET address = '' 
+     WHERE address LIKE '%Salem%' OR address LIKE '%636001%' OR TRIM(address) = 'Memotrix'`
+  );
 
   // Ensure UPI ID is never an email address (auto-correct any legacy @gmail.com UPI IDs)
   await db.query(

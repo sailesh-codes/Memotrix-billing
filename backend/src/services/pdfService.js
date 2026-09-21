@@ -92,8 +92,8 @@ export async function generatePdfKitInvoice(data = {}) {
       let y = 32;
       doc.font('Helvetica-Bold').fontSize(20).fillColor('#0F172A').text(bp.business_name || 'Memotrix', left, y);
       y += 24;
-      if (bp.address) {
-        doc.font('Helvetica').fontSize(9).fillColor('#475569').text(bp.address, left, y);
+      if (bp.address && bp.address.trim() && !bp.address.includes('Salem') && bp.address.trim().toLowerCase() !== (bp.business_name || 'Memotrix').trim().toLowerCase()) {
+        doc.font('Helvetica').fontSize(9).fillColor('#475569').text(bp.address.trim(), left, y);
         y += 12;
       }
       doc.font('Helvetica').fontSize(9).fillColor('#475569').text(`Phone: ${bp.phone || '6384241882'} | Email: ${bp.email || 'teammemotrix@gmail.com'}`, left, y);

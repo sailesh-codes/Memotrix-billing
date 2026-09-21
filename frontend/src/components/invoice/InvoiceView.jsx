@@ -362,7 +362,9 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
       <div className="flex justify-between items-center mb-2 print:mb-1">
         <div>
           <h1 className="text-2xl print:text-xl font-black text-slate-900 tracking-tight">{bp.business_name || 'Memotrix'}</h1>
-          {bp.address && <p className="text-xs print:text-[10px] text-slate-600 mt-0.5">{bp.address}</p>}
+          {bp.address && bp.address.trim() && !bp.address.includes('Salem') && bp.address.trim().toLowerCase() !== (bp.business_name || 'Memotrix').trim().toLowerCase() && (
+            <p className="text-xs print:text-[10px] text-slate-600 mt-0.5">{bp.address.trim()}</p>
+          )}
           <p className="text-xs print:text-[10px] text-slate-600">Phone: {bp.phone || '6384241882'} | Email: {bp.email || 'teammemotrix@gmail.com'}</p>
           {bp.gstin && <p className="text-xs print:text-[10px] text-slate-600">GSTIN: {bp.gstin}</p>}
           {bp.website && <p className="text-xs print:text-[10px] text-slate-600">Website: {bp.website}</p>}
