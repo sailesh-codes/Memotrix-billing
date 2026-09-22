@@ -62,8 +62,14 @@ export function configureSecurity(app) {
           return callback(null, true);
         }
 
-        // Allow any Vercel domain (*.vercel.app)
-        if (origin.endsWith('.vercel.app') || origin === 'https://vercel.app') {
+        // Allow standard production deployment domains (Vercel, Netlify, Render, Railway)
+        if (
+          origin.endsWith('.vercel.app') ||
+          origin === 'https://vercel.app' ||
+          origin.endsWith('.netlify.app') ||
+          origin.endsWith('.onrender.com') ||
+          origin.endsWith('.railway.app')
+        ) {
           return callback(null, true);
         }
 

@@ -10,6 +10,7 @@ import { buildUpiString, generateQrDataUri } from '../services/qrService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendDir = path.resolve(__dirname, '..', '..');
+const isVercel = !!process.env.VERCEL;
 
 const router = express.Router();
 router.use(authenticate);
@@ -18,7 +19,6 @@ const FIXED_ADMIN_EMAIL = 'teammemotrix@gmail.com';
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const isVercel = !!process.env.VERCEL;
     const uploadDir = isVercel ? path.join('/tmp', 'uploads') : path.join(backendDir, 'public', 'uploads');
     if (!fs.existsSync(uploadDir)) {
       try {
@@ -261,34 +261,50 @@ const handleLogoUpload = (req, res) => {
 
     try {
       const timestamp = Date.now();
+      const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '') || 'png';
+      const mimeType = req.file.mimetype || (ext === 'svg' ? 'image/svg+xml' : `image/${ext}`);
+      let logoDataUri = null;
+      try {
+        const fileBuf = fs.readFileSync(req.file.path);
+        logoDataUri = `data:${mimeType};base64,${fileBuf.toString('base64')}`;
+      } catch (readErr) {
+        console.warn('[SETTINGS] Could not read uploaded file to base64:', readErr.message);
+      }
+
       const logoUrl = `/uploads/${req.file.filename}?v=${timestamp}`;
+      const originalUrl = logoDataUri || logoUrl;
+
       const existing = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
       if (!existing) {
         await db.query(
           `INSERT INTO business_profile (id, tenant_id, business_name, phone, address, logo_url, logo_original_url)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', logoUrl, logoUrl]
+          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', logoUrl, originalUrl]
         );
       } else {
-        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ? WHERE id = ?', [logoUrl, logoUrl, existing.id]);
+        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [logoUrl, originalUrl, existing.id]);
       }
       
-      // Invalidate PDF cache on disk & DB
-      const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
-      if (fs.existsSync(pdfStorageDir)) {
-        const pdfFiles = fs.readdirSync(pdfStorageDir);
-        for (const f of pdfFiles) {
-          if (f.endsWith('.pdf')) {
-            try { fs.unlinkSync(path.join(pdfStorageDir, f)); } catch (e) {}
+      // Invalidate PDF cache on disk & DB safely without blocking upload response
+      try {
+        const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
+        if (fs.existsSync(pdfStorageDir)) {
+          const pdfFiles = fs.readdirSync(pdfStorageDir);
+          for (const f of pdfFiles) {
+            if (f.endsWith('.pdf')) {
+              try { fs.unlinkSync(path.join(pdfStorageDir, f)); } catch (e) {}
+            }
           }
         }
+        await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
+      } catch (cacheErr) {
+        console.warn('[SETTINGS] PDF cache invalidation warning:', cacheErr.message);
       }
-      await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
 
       return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl, logoOriginalUrl: logoUrl });
     } catch (dbErr) {
       console.error('[SETTINGS] Logo upload save error:', dbErr);
-      return res.status(500).json({ success: false, error: 'Failed to save logo in database. Please try again.' });
+      return res.status(500).json({ success: false, error: `Failed to save logo in database: ${dbErr.message || 'Database error'}` });
     }
   });
 };

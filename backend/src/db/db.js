@@ -20,6 +20,17 @@ const dbPath = process.env.SQLITE_DB_PATH || defaultSqlitePath;
 if (process.env.DATABASE_URL || process.env.PGHOST) {
   isPg = true;
   const { Pool } = pg;
+  const isCloudPg = Boolean(
+    process.env.PGSSL === 'true' ||
+    (process.env.DATABASE_URL && (
+      process.env.DATABASE_URL.includes('sslmode=require') ||
+      process.env.DATABASE_URL.includes('.neon.tech') ||
+      process.env.DATABASE_URL.includes('.supabase.co') ||
+      process.env.DATABASE_URL.includes('render.com') ||
+      process.env.DATABASE_URL.includes('railway.app') ||
+      (!process.env.DATABASE_URL.includes('localhost') && !process.env.DATABASE_URL.includes('127.0.0.1'))
+    ))
+  );
   pgPool = new Pool({
     connectionString: process.env.DATABASE_URL,
     host: process.env.PGHOST,
@@ -27,9 +38,9 @@ if (process.env.DATABASE_URL || process.env.PGHOST) {
     password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE || 'memotrix',
     port: process.env.PGPORT || 5432,
-    ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false
+    ssl: isCloudPg ? { rejectUnauthorized: false } : false
   });
-  console.log('[DB] PostgreSQL connected');
+  console.log('[DB] PostgreSQL connected' + (isCloudPg ? ' (SSL enabled)' : ''));
 } else {
   sqlite3.verbose();
   sqliteDb = new sqlite3.Database(dbPath, (err) => {

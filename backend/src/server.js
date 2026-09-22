@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import configureSecurity from './middleware/security.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { winstonLogger } from './middleware/logger.js';
+import db from './db/db.js';
 import { seedDatabase } from './db/seed.js';
 import { initScheduler } from './services/schedulerService.js';
 
@@ -88,6 +89,23 @@ if (fs.existsSync(uploadsDir)) {
   app.use('/uploads', express.static(uploadsDir, staticOptions));
   app.use('/api/uploads', express.static(uploadsDir, staticOptions));
 }
+
+// Production / serverless fallback: stream base64 logo from database if physical file is missing from ephemeral disk
+app.use(['/uploads/:filename', '/api/uploads/:filename'], async (req, res, next) => {
+  try {
+    const bp = await db.queryOne('SELECT logo_original_url, logo_url FROM business_profile LIMIT 1');
+    const stored = bp?.logo_original_url || bp?.logo_url;
+    if (stored && stored.startsWith('data:image/')) {
+      const match = stored.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        res.setHeader('Content-Type', match[1]);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(Buffer.from(match[2], 'base64'));
+      }
+    }
+  } catch (e) {}
+  next();
+});
 if (fs.existsSync(assetsDir)) {
   app.use('/assets', express.static(assetsDir, staticOptions));
   app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png'), staticOptions));

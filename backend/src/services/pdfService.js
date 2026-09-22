@@ -119,6 +119,13 @@ export async function generatePdfKitInvoice(data = {}) {
       ];
       for (const cand of logoCandidates) {
         if (!cand) continue;
+        if (typeof cand === 'string' && cand.startsWith('data:image/')) {
+          try {
+            const b64 = cand.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+            doc.image(Buffer.from(b64, 'base64'), right - 110, 32, { fit: [110, 55], align: 'right' });
+            break;
+          } catch (e) {}
+        }
         const clean = cand.split('?')[0].replace(/^\//, '');
         const candidatePaths = [
           cand,
