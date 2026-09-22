@@ -13,8 +13,6 @@ function getJwtSecret() {
   return secret;
 }
 
-const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-
 export function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -37,15 +35,6 @@ export function authenticate(req, res, next) {
           return res.status(401).json({ 
             error: 'Session terminated: Another device logged into your admin account.',
             code: 'SESSION_TERMINATED'
-          });
-        }
-
-        // 15-minute inactivity timeout check
-        const lastActivity = decoded.lastActivity || Date.now();
-        if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-          return res.status(401).json({ 
-            error: 'Session timed out due to 15 minutes of inactivity.',
-            code: 'SESSION_TIMEOUT'
           });
         }
 
@@ -84,11 +73,10 @@ export function generateToken(user, sessionToken) {
       role: user.role,
       adminLevel: user.admin_level,
       tenantId: user.tenant_id,
-      sessionToken,
-      lastActivity: Date.now()
+      sessionToken
     },
     getJwtSecret(),
-    { expiresIn: '8h' }
+    { expiresIn: '30d' }
   );
 }
 

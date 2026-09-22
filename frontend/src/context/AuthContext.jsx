@@ -3,8 +3,6 @@ import { authApi, settingsApi } from '../api/endpoints';
 
 const AuthContext = createContext(null);
 
-const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
-const WARNING_BEFORE_MS = 2 * 60 * 1000;
 const FIXED_ADMIN_EMAIL = 'teammemotrix@gmail.com';
 
 export function AuthProvider({ children }) {
@@ -21,10 +19,22 @@ export function AuthProvider({ children }) {
   const [businessProfile, setBusinessProfile] = useState(null);
   const [templateSettings, setTemplateSettings] = useState(null);
   const [featureFlags, setFeatureFlags] = useState({ barcode_enabled: false, loyalty_enabled: false });
-  
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [sessionErrorMessage, setSessionErrorMessage] = useState(null);
+
+  const logout = useCallback(async () => {
+    try {
+      if (token) await authApi.logout();
+    } catch (e) {
+      // ignore
+    } finally {
+      localStorage.removeItem('memotrix_token');
+      localStorage.removeItem('memotrix_user');
+      localStorage.removeItem('memotrix_last_activity');
+      localStorage.removeItem('memotrix-billing-draft'); // Wipe sensitive draft data on logout
+      setToken(null);
+      setUser(null);
+    }
+  }, [token]);
 
   const refreshSettings = useCallback(async () => {
     if (!token) return;
@@ -62,36 +72,19 @@ export function AuthProvider({ children }) {
     };
     window.addEventListener('memotrix_session_expired', handleExpired);
     return () => window.removeEventListener('memotrix_session_expired', handleExpired);
-  }, []);
+  }, [logout]);
 
-  const resetInactivityTimer = useCallback(() => {
-    setLastActivity(Date.now());
-    if (showInactivityWarning) setShowInactivityWarning(false);
-  }, [showInactivityWarning]);
-
+  // Sync logout across tabs if user explicitly logs out in another tab
   useEffect(() => {
-    if (!token) return;
-
-    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
-    const handleUserActivity = () => resetInactivityTimer();
-
-    events.forEach(ev => window.addEventListener(ev, handleUserActivity));
-
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - lastActivity;
-      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
-        setSessionErrorMessage('Logged out due to 15 minutes of inactivity.');
-        logout();
-      } else if (elapsed >= (INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_MS)) {
-        setShowInactivityWarning(true);
+    const handleStorageChange = (e) => {
+      if (e.key === 'memotrix_token' && !e.newValue) {
+        setToken(null);
+        setUser(null);
       }
-    }, 10000);
-
-    return () => {
-      events.forEach(ev => window.removeEventListener(ev, handleUserActivity));
-      clearInterval(interval);
     };
-  }, [token, lastActivity, resetInactivityTimer]);
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const login = (tokenData, userData) => {
     const safeUserData = { ...userData, email: FIXED_ADMIN_EMAIL };
@@ -100,23 +93,6 @@ export function AuthProvider({ children }) {
     setToken(tokenData);
     setUser(safeUserData);
     setSessionErrorMessage(null);
-    setLastActivity(Date.now());
-    setShowInactivityWarning(false);
-  };
-
-  const logout = async () => {
-    try {
-      if (token) await authApi.logout();
-    } catch (e) {
-      // ignore
-    } finally {
-      localStorage.removeItem('memotrix_token');
-      localStorage.removeItem('memotrix_user');
-      localStorage.removeItem('memotrix-billing-draft'); // Wipe sensitive draft data on logout
-      setToken(null);
-      setUser(null);
-      setShowInactivityWarning(false);
-    }
   };
 
   return (
@@ -131,8 +107,8 @@ export function AuthProvider({ children }) {
         refreshSettings,
         login,
         logout,
-        showInactivityWarning,
-        resetInactivityTimer,
+        showInactivityWarning: false,
+        resetInactivityTimer: () => {},
         sessionErrorMessage,
         setSessionErrorMessage
       }}

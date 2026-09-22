@@ -2,9 +2,14 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { buildUpiString, generateQrDataUri } from '../services/qrService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendDir = path.resolve(__dirname, '..', '..');
 
 const router = express.Router();
 router.use(authenticate);
@@ -14,7 +19,7 @@ const FIXED_ADMIN_EMAIL = 'teammemotrix@gmail.com';
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const isVercel = !!process.env.VERCEL;
-    const uploadDir = isVercel ? path.join('/tmp', 'uploads') : path.join(process.cwd(), 'public', 'uploads');
+    const uploadDir = isVercel ? path.join('/tmp', 'uploads') : path.join(backendDir, 'public', 'uploads');
     if (!fs.existsSync(uploadDir)) {
       try {
         fs.mkdirSync(uploadDir, { recursive: true });
@@ -257,10 +262,19 @@ const handleLogoUpload = (req, res) => {
     try {
       const timestamp = Date.now();
       const logoUrl = `/uploads/${req.file.filename}?v=${timestamp}`;
-      await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?', [logoUrl, logoUrl]);
+      const existing = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
+      if (!existing) {
+        await db.query(
+          `INSERT INTO business_profile (id, tenant_id, business_name, phone, address, logo_url, logo_original_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', logoUrl, logoUrl]
+        );
+      } else {
+        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ? WHERE id = ?', [logoUrl, logoUrl, existing.id]);
+      }
       
       // Invalidate PDF cache on disk & DB
-      const pdfStorageDir = path.join(process.cwd(), 'storage', 'pdfs');
+      const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
       if (fs.existsSync(pdfStorageDir)) {
         const pdfFiles = fs.readdirSync(pdfStorageDir);
         for (const f of pdfFiles) {
@@ -273,6 +287,7 @@ const handleLogoUpload = (req, res) => {
 
       return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl, logoOriginalUrl: logoUrl });
     } catch (dbErr) {
+      console.error('[SETTINGS] Logo upload save error:', dbErr);
       return res.status(500).json({ success: false, error: 'Failed to save logo in database. Please try again.' });
     }
   });

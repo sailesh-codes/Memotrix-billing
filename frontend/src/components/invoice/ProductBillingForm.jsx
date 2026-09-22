@@ -196,12 +196,16 @@ export function ProductBillingForm({ onInvoiceCreated }) {
     try {
       let custId = draft.selectedCustomer ? draft.selectedCustomer.id : null;
       if (!draft.selectedCustomer && draft.newCustomerName) {
-        const cRes = await customersApi.create({
-          name: draft.newCustomerName,
-          phone: draft.newCustomerPhone || '',
-          email: draft.newCustomerEmail || ''
-        });
-        custId = cRes.data.customer.id;
+        try {
+          const cRes = await customersApi.create({
+            name: draft.newCustomerName,
+            phone: draft.newCustomerPhone || '',
+            email: draft.newCustomerEmail || ''
+          });
+          custId = cRes.data?.customer?.id || null;
+        } catch (custErr) {
+          console.warn('[INVOICE] Customer profile auto-creation warning:', custErr);
+        }
       }
 
       const finalPayments = isMultiTender && draft.payments && draft.payments.length > 0

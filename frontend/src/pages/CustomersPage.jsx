@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { customersApi, billsApi } from '../api/endpoints';
-import { UserPlus, Search, Award, FileText, X, Phone, Mail, MapPin, User, ChevronRight } from 'lucide-react';
+import { UserPlus, Search, Award, FileText, X, Phone, Mail, MapPin, User, ChevronRight, Edit3, Trash2, IndianRupee, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export function CustomersPage() {
   const { featureFlags } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerBills, setCustomerBills] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // New Customer Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -22,19 +26,35 @@ export function CustomersPage() {
   const [customerType, setCustomerType] = useState('retail');
   const [error, setError] = useState('');
 
+  // Edit Customer Form State
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editCustomerType, setEditCustomerType] = useState('retail');
+  const [editError, setEditError] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+
   useEffect(() => {
     fetchCustomers();
   }, []);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (searchTerm = '') => {
     try {
-      const res = await customersApi.getAll();
+      setLoading(true);
+      const res = await customersApi.getAll(searchTerm ? { search: searchTerm } : {});
       setCustomers(res.data.customers || []);
     } catch (e) {
       console.error(e);
+      showToast('Failed to load customer profiles', 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
   };
 
   const handleSelectCustomer = async (cust) => {
@@ -54,33 +74,94 @@ export function CustomersPage() {
     e.preventDefault();
     setError('');
     try {
-      await customersApi.create({ name, phone, email, address, customer_type: customerType });
+      const res = await customersApi.create({
+        name,
+        phone,
+        email,
+        address,
+        customer_type: customerType
+      });
+      showToast(res.data.message || 'Customer profile created successfully!', 'success');
       setShowModal(false);
       setName('');
       setPhone('');
       setEmail('');
       setAddress('');
       fetchCustomers();
+      if (res.data.customer) {
+        handleSelectCustomer(res.data.customer);
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create customer');
     }
   };
 
+  const openEditModal = (cust) => {
+    setEditName(cust.name || '');
+    setEditPhone(cust.phone || '');
+    setEditEmail(cust.email || '');
+    setEditAddress(cust.address || '');
+    setEditCustomerType(cust.customer_type || 'retail');
+    setEditError('');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateCustomer = async (e) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    setEditError('');
+    setIsUpdating(true);
+    try {
+      const res = await customersApi.update(selectedCustomer.id, {
+        name: editName,
+        phone: editPhone,
+        email: editEmail,
+        address: editAddress,
+        customer_type: editCustomerType
+      });
+      showToast('Customer profile updated successfully!', 'success');
+      setShowEditModal(false);
+      setSelectedCustomer(res.data.customer);
+      fetchCustomers();
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Failed to update customer');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteCustomer = async () => {
+    if (!selectedCustomer) return;
+    const confirmDelete = window.confirm(`Are you sure you want to delete customer "${selectedCustomer.name}"? Existing invoices will be preserved.`);
+    if (!confirmDelete) return;
+
+    try {
+      await customersApi.delete(selectedCustomer.id);
+      showToast(`Customer "${selectedCustomer.name}" deleted successfully.`, 'info');
+      setSelectedCustomer(null);
+      fetchCustomers();
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to delete customer', 'error');
+    }
+  };
+
   const filtered = customers.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone && c.phone.includes(search))
+    (c.name && c.name.toLowerCase().includes(search.toLowerCase())) ||
+    (c.phone && c.phone.includes(search)) ||
+    (c.email && c.email.toLowerCase().includes(search.toLowerCase())) ||
+    (c.address && c.address.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Customer Profiles</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Retail, wholesale, and corporate customer contacts & purchase history</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="btn-primary py-2.5 px-4 text-xs font-bold shadow-lg shadow-blue-600/20"
+          className="btn-primary py-2.5 px-4 text-xs font-bold shadow-lg shadow-blue-600/20 cursor-pointer flex items-center"
         >
           <UserPlus className="w-4 h-4 mr-1.5" />
           <span>Add Customer Profile</span>
@@ -93,9 +174,9 @@ export function CustomersPage() {
           <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
           <input
             type="text"
-            placeholder="Search customer profiles by name or phone number..."
+            placeholder="Search customer profiles by name, phone, email, or address..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full pl-10 pr-4 py-2.5 form-input text-xs"
           />
         </div>
@@ -172,30 +253,62 @@ export function CustomersPage() {
                 <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider block mb-0.5">Profile Details</span>
                 <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">{selectedCustomer.name}</h3>
               </div>
-              <button
-                onClick={() => setSelectedCustomer(null)}
-                className="p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => openEditModal(selectedCustomer)}
+                  title="Edit customer details"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleDeleteCustomer}
+                  title="Delete customer profile"
+                  className="p-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* METRIC BADGES */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-blue-50/60 dark:bg-slate-800/60 rounded-xl border border-blue-100 dark:border-slate-700">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">Total Spent</span>
+                <span className="text-base font-black text-blue-600 dark:text-blue-400">
+                  ₹{parseFloat(selectedCustomer.total_spent || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="p-3 bg-amber-50/60 dark:bg-slate-800/60 rounded-xl border border-amber-100 dark:border-slate-700">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">Outstanding</span>
+                <span className="text-base font-black text-amber-600 dark:text-amber-400">
+                  ₹{parseFloat(selectedCustomer.outstanding_balance || 0).toFixed(2)}
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 font-semibold">
               {selectedCustomer.phone && (
                 <div className="flex items-center space-x-2">
-                  <Phone className="w-3.5 h-3.5 text-blue-600" />
+                  <Phone className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
                   <span>{selectedCustomer.phone}</span>
                 </div>
               )}
               {selectedCustomer.email && (
                 <div className="flex items-center space-x-2">
-                  <Mail className="w-3.5 h-3.5 text-purple-600" />
+                  <Mail className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
                   <span>{selectedCustomer.email}</span>
                 </div>
               )}
               {selectedCustomer.address && (
-                <div className="flex items-center space-x-2">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                <div className="flex items-start space-x-2">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
                   <span>{selectedCustomer.address}</span>
                 </div>
               )}
@@ -249,7 +362,7 @@ export function CustomersPage() {
           <div className="glass-card max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-base font-black text-slate-900 dark:text-slate-100">Add Customer Profile</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -269,11 +382,10 @@ export function CustomersPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number *</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
                 <input
                   type="text"
-                  required
-                  placeholder="9876543210"
+                  placeholder="e.g. 9876543210 (Optional)"
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   className="w-full p-2.5 form-input text-xs"
@@ -283,9 +395,19 @@ export function CustomersPage() {
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
                 <input
                   type="email"
-                  placeholder="customer@example.com"
+                  placeholder="customer@example.com (Optional)"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  className="w-full p-2.5 form-input text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Full Address</label>
+                <textarea
+                  rows={2}
+                  placeholder="Enter street, city, state, pincode (Optional)..."
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
                   className="w-full p-2.5 form-input text-xs"
                 />
               </div>
@@ -302,19 +424,104 @@ export function CustomersPage() {
                 </select>
               </div>
 
-              <div className="flex space-x-3 justify-end pt-3">
+              <div className="flex space-x-3 justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary py-2 px-4 text-xs font-bold shadow-lg shadow-blue-600/20"
+                  className="btn-primary py-2 px-4 text-xs font-bold shadow-lg shadow-blue-600/20 cursor-pointer"
                 >
                   Save Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CUSTOMER MODAL */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-black text-slate-900 dark:text-slate-100">Edit Customer Profile</h3>
+              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editError && <p className="text-xs text-rose-600 font-bold">{typeof editError === 'object' ? (editError.message || JSON.stringify(editError)) : String(editError)}</p>}
+
+            <form onSubmit={handleUpdateCustomer} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  className="w-full p-2.5 form-input text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  value={editPhone}
+                  onChange={e => setEditPhone(e.target.value)}
+                  className="w-full p-2.5 form-input text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  className="w-full p-2.5 form-input text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Full Address</label>
+                <textarea
+                  rows={2}
+                  value={editAddress}
+                  onChange={e => setEditAddress(e.target.value)}
+                  className="w-full p-2.5 form-input text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Type</label>
+                <select
+                  value={editCustomerType}
+                  onChange={e => setEditCustomerType(e.target.value)}
+                  className="w-full p-2.5 form-select text-xs"
+                >
+                  <option value="retail">Retail</option>
+                  <option value="wholesale">Wholesale</option>
+                  <option value="corporate">Corporate</option>
+                </select>
+              </div>
+
+              <div className="flex space-x-3 justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="btn-primary py-2 px-4 text-xs font-bold shadow-lg shadow-blue-600/20 cursor-pointer"
+                >
+                  {isUpdating ? 'Saving...' : 'Update Customer'}
                 </button>
               </div>
             </form>

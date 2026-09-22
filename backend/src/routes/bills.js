@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { numberToWords } from '../services/numberToWords.js';
@@ -10,10 +11,14 @@ import { generateInvoicePdf } from '../services/pdfService.js';
 import { sendLowStockAlert } from '../services/emailService.js';
 import { encrypt, decrypt } from '../services/cryptoService.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendDir = path.resolve(__dirname, '..', '..');
+
 const router = express.Router();
 
 const isVercel = !!process.env.VERCEL;
-const PDF_STORAGE_DIR = isVercel ? path.join('/tmp', 'pdfs') : path.join(process.cwd(), 'storage', 'pdfs');
+const PDF_STORAGE_DIR = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
 if (!fs.existsSync(PDF_STORAGE_DIR)) {
   try {
     fs.mkdirSync(PDF_STORAGE_DIR, { recursive: true });
@@ -368,6 +373,16 @@ router.post('/', async (req, res) => {
 
     await db.query('DELETE FROM billing_drafts WHERE tenant_id = ? AND user_id = ?', [tenantId, userId]);
 
+    if (customer_id) {
+      await db.query(
+        `UPDATE customers 
+         SET total_spent = COALESCE(total_spent, 0) + ?,
+             outstanding_balance = COALESCE(outstanding_balance, 0) + ?
+         WHERE id = ? AND tenant_id = ?`,
+        [receivedAmount, balanceAmount, customer_id, tenantId]
+      ).catch(e => console.warn('[BILLS] Customer metrics update warning:', e.message));
+    }
+
     await db.query(
       `INSERT INTO bill_audit_logs (id, tenant_id, bill_id, action, changes_json, admin_id)
        VALUES (?, ?, ?, 'created', ?, ?)`,
@@ -526,6 +541,10 @@ function getLogoBase64DataUri(logoUrl) {
 
     const cleanRelative = rawUrl.replace(/^\//, '');
     const candidatePaths = [
+      path.join(backendDir, 'public', cleanRelative),
+      path.join(backendDir, 'public', 'uploads', path.basename(cleanRelative)),
+      path.join(backendDir, cleanRelative),
+      path.join(backendDir, 'assets', cleanRelative),
       path.join(process.cwd(), 'public', cleanRelative),
       path.join(process.cwd(), cleanRelative),
       path.join(process.cwd(), 'assets', cleanRelative),
@@ -534,7 +553,7 @@ function getLogoBase64DataUri(logoUrl) {
     ];
 
     for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
+      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
         targetPath = p;
         break;
       }
@@ -543,13 +562,15 @@ function getLogoBase64DataUri(logoUrl) {
 
   if (!targetPath || !fs.existsSync(targetPath)) {
     const fallbackPaths = [
+      path.join(backendDir, 'public', 'logo-default.png'),
+      path.join(backendDir, 'assets', 'logo-default.png'),
       path.join(process.cwd(), 'public', 'logo-default.png'),
       path.join(process.cwd(), 'assets', 'logo-default.png'),
       path.join(process.cwd(), '..', 'frontend', 'public', 'logo-default.png'),
       path.join(process.cwd(), 'logo-default.png')
     ];
     for (const p of fallbackPaths) {
-      if (fs.existsSync(p)) {
+      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
         targetPath = p;
         break;
       }

@@ -1,8 +1,13 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
 import { buildUpiString, sanitizeUpiId } from './qrService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendDir = path.resolve(__dirname, '..', '..');
 
 let browserInstance = null;
 
@@ -107,16 +112,29 @@ export async function generatePdfKitInvoice(data = {}) {
       const logoCandidates = [
         bp.logo_original_url,
         bp.logo_url,
-        path.join(process.cwd(), 'public', 'uploads', 'logo_1788409748465.jpeg'),
+        path.join(backendDir, 'public', 'logo-default.png'),
+        path.join(backendDir, 'assets', 'logo-default.png'),
         path.join(process.cwd(), 'public', 'logo-default.png'),
         path.join(process.cwd(), 'assets', 'logo-default.png')
       ];
       for (const cand of logoCandidates) {
         if (!cand) continue;
         const clean = cand.split('?')[0].replace(/^\//, '');
-        const full = path.isAbsolute(cand) ? cand : path.join(process.cwd(), clean);
-        const fullPublic = path.join(process.cwd(), 'public', clean);
-        const resolved = fs.existsSync(cand) ? cand : (fs.existsSync(full) ? full : (fs.existsSync(fullPublic) ? fullPublic : null));
+        const candidatePaths = [
+          cand,
+          path.join(backendDir, clean),
+          path.join(backendDir, 'public', clean),
+          path.join(backendDir, 'public', 'uploads', path.basename(clean)),
+          path.join(process.cwd(), clean),
+          path.join(process.cwd(), 'public', clean)
+        ];
+        let resolved = null;
+        for (const p of candidatePaths) {
+          if (p && fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
+            resolved = p;
+            break;
+          }
+        }
         if (resolved) {
           try {
             doc.image(resolved, right - 110, 32, { fit: [110, 55], align: 'right' });
