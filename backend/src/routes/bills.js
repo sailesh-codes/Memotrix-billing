@@ -312,7 +312,30 @@ router.post('/', async (req, res) => {
     const processedItems = [];
 
     for (const item of items) {
-      const product = item.product_id ? await db.queryOne('SELECT * FROM products WHERE id = ? AND tenant_id = ?', [item.product_id, tenantId]) : null;
+      let product = item.product_id ? await db.queryOne('SELECT * FROM products WHERE id = ? AND tenant_id = ?', [item.product_id, tenantId]) : null;
+
+      // If product_id is null, find by name or auto-register in products catalog
+      if (!product && item.item_name && item.item_name.trim()) {
+        const cleanItemName = item.item_name.trim();
+        const existingByName = await db.queryOne('SELECT * FROM products WHERE LOWER(name) = LOWER(?) AND tenant_id = ?', [cleanItemName, tenantId]);
+        if (existingByName) {
+          product = existingByName;
+          item.product_id = existingByName.id;
+        } else {
+          const newProdId = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          const autoSku = `ITEM-${Date.now().toString(36).toUpperCase()}`;
+          const pPrice = parseFloat(item.unit_price || 0);
+          await db.query(
+            `INSERT INTO products (id, tenant_id, sku, name, description, category, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, is_active)
+             VALUES (?, ?, ?, ?, '', 'General', ?, 0, ?, ?, ?, 999, 5, true)`,
+            [newProdId, tenantId, autoSku, cleanItemName, item.hsn_sac || '', pPrice, pPrice, pPrice]
+          ).catch(e => console.warn('[BILLS] Product auto-creation warning:', e.message));
+
+          item.product_id = newProdId;
+          product = await db.queryOne('SELECT * FROM products WHERE id = ?', [newProdId]);
+        }
+      }
+
       const unitPrice = parseFloat(item.unit_price || product?.retail_price || 0);
       const qty = parseInt(item.quantity || 1);
       const lineSubtotal = unitPrice * qty;

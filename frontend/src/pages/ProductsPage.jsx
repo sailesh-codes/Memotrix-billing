@@ -218,11 +218,10 @@ export function ProductsPage() {
 
             <form onSubmit={handleCreateProduct} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">SKU *</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">SKU (Optional)</label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. FRAME-A4"
+                  placeholder="e.g. FRAME-A4 (auto-generated if left blank)"
                   value={sku}
                   onChange={e => setSku(e.target.value)}
                   className="w-full p-2.5 form-input text-xs uppercase"

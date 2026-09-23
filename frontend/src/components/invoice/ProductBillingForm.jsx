@@ -70,15 +70,39 @@ export function ProductBillingForm({ onInvoiceCreated }) {
     setProductSearch('');
   };
 
-  const addCustomItem = (e) => {
+  const addCustomItem = async (e) => {
     if (e) e.preventDefault();
     if (!customName.trim() || !customPrice || parseFloat(customPrice) <= 0) {
       showToast('Please enter a valid Item Name and Price/Rate.', 'warning');
       return;
     }
 
+    let prodId = selectedProductId;
+
+    if (!prodId) {
+      const existingProd = products.find(p => p.name.toLowerCase() === customName.trim().toLowerCase());
+      if (existingProd) {
+        prodId = existingProd.id;
+      } else {
+        try {
+          const pRes = await productsApi.create({
+            name: customName.trim(),
+            retail_price: parseFloat(customPrice),
+            category: 'General',
+            stock_quantity: 100
+          });
+          if (pRes.data?.product?.id) {
+            prodId = pRes.data.product.id;
+            fetchData();
+          }
+        } catch (pErr) {
+          console.warn('[INVOICE] Catalog auto-register warning:', pErr);
+        }
+      }
+    }
+
     const newItem = {
-      product_id: selectedProductId || null,
+      product_id: prodId || null,
       item_name: customName.trim(),
       hsn_sac: '',
       quantity: parseInt(customQty) || 1,

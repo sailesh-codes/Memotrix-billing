@@ -78,29 +78,72 @@ router.get('/scan/:sku', authenticate, async (req, res) => {
  * POST /api/products
  */
 router.post('/', authenticate, async (req, res) => {
-  const { sku, name, description, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls } = req.body;
+  const tenantId = req.user?.tenantId || 'tenant-memotrix-01';
+  let { sku, name, description, category, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls } = req.body;
 
-  if (!sku || !name || !retail_price) {
-    return res.status(400).json({ error: 'SKU, Product Name, and Retail Price are required.' });
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Product Name is required.' });
+  }
+
+  const cleanName = name.trim();
+  const cleanPrice = parseFloat(retail_price);
+  if (isNaN(cleanPrice) || cleanPrice < 0) {
+    return res.status(400).json({ error: 'A valid Selling Price is required.' });
+  }
+
+  // Auto-generate SKU if omitted or blank
+  if (!sku || typeof sku !== 'string' || !sku.trim()) {
+    const prefix = cleanName.replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase() || 'ITEM';
+    sku = `${prefix}-${Date.now().toString(36).toUpperCase()}`;
+  } else {
+    sku = sku.trim().toUpperCase();
   }
 
   try {
-    const existing = await db.queryOne('SELECT id FROM products WHERE sku = ?', [sku]);
+    const existing = await db.queryOne('SELECT id, name FROM products WHERE (sku = ? OR (LOWER(name) = LOWER(?) AND tenant_id = ?))', [sku, cleanName, tenantId]);
     if (existing) {
-      return res.status(400).json({ error: `Product with SKU '${sku}' already exists.` });
+      if (existing.name.toLowerCase() !== cleanName.toLowerCase()) {
+        sku = `${sku}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+      } else {
+        await db.query(
+          `UPDATE products 
+           SET retail_price = ?, stock_quantity = stock_quantity + ?, is_active = true
+           WHERE id = ?`,
+          [cleanPrice, parseInt(stock_quantity) || 0, existing.id]
+        );
+        const updated = await db.queryOne('SELECT * FROM products WHERE id = ?', [existing.id]);
+        return res.status(200).json({ message: 'Existing product updated successfully', product: updated });
+      }
     }
 
-    const id = `prod-${Date.now()}`;
+    const cleanCategory = (category || '').trim() || 'General';
+    let effectiveCategoryId = category_id || null;
+
+    if (!effectiveCategoryId && cleanCategory) {
+      const existingCat = await db.queryOne('SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND tenant_id = ?', [cleanCategory, tenantId]);
+      if (existingCat) {
+        effectiveCategoryId = existingCat.id;
+      } else {
+        const newCatId = `cat-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+        await db.query(
+          `INSERT INTO categories (id, tenant_id, name, description) VALUES (?, ?, ?, ?)`,
+          [newCatId, tenantId, cleanCategory, '']
+        ).catch(() => {});
+        effectiveCategoryId = newCatId;
+      }
+    }
+
+    const id = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const imagesJson = JSON.stringify(image_urls || []);
 
     await db.query(
-      `INSERT INTO products (id, sku, name, description, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true)`,
-      [id, sku, name, description || '', category_id || null, hsn_sac || '', cost_price || 0, retail_price, wholesale_price || retail_price, corporate_price || retail_price, stock_quantity || 0, low_stock_threshold || 5, imagesJson]
+      `INSERT INTO products (id, tenant_id, sku, name, description, category, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true)`,
+      [id, tenantId, sku, cleanName, description || '', cleanCategory, effectiveCategoryId, hsn_sac || '', parseFloat(cost_price || 0), cleanPrice, parseFloat(wholesale_price || cleanPrice), parseFloat(corporate_price || cleanPrice), parseInt(stock_quantity) || 10, parseInt(lowStock_threshold || 5), imagesJson]
     );
 
     const created = await db.queryOne('SELECT * FROM products WHERE id = ?', [id]);
-    return res.status(201).json({ message: 'Product created successfully', product: created });
+    return res.status(201).json({ message: 'Product created successfully and stored in catalog', product: created });
   } catch (err) {
     console.error('[PRODUCTS] Create error:', err);
     res.status(500).json({ error: 'Failed to create product' });
@@ -112,19 +155,20 @@ router.post('/', authenticate, async (req, res) => {
  */
 router.put('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { sku, name, description, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls, is_active } = req.body;
+  const { sku, name, description, category, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, image_urls, is_active } = req.body;
 
   try {
     const existing = await db.queryOne('SELECT id FROM products WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Product not found' });
 
+    const cleanCategory = (category || '').trim() || 'General';
     const imagesJson = JSON.stringify(image_urls || []);
 
     await db.query(
       `UPDATE products 
-       SET sku = ?, name = ?, description = ?, category_id = ?, hsn_sac = ?, cost_price = ?, retail_price = ?, wholesale_price = ?, corporate_price = ?, stock_quantity = ?, low_stock_threshold = ?, image_urls = ?, is_active = ?
+       SET sku = ?, name = ?, description = ?, category = ?, category_id = ?, hsn_sac = ?, cost_price = ?, retail_price = ?, wholesale_price = ?, corporate_price = ?, stock_quantity = ?, low_stock_threshold = ?, image_urls = ?, is_active = ?
        WHERE id = ?`,
-      [sku, name, description, category_id, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, imagesJson, is_active !== undefined ? is_active : true, id]
+      [sku, name, description, cleanCategory, category_id || null, hsn_sac, cost_price, retail_price, wholesale_price, corporate_price, stock_quantity, low_stock_threshold, imagesJson, is_active !== undefined ? is_active : true, id]
     );
 
     const updated = await db.queryOne('SELECT * FROM products WHERE id = ?', [id]);

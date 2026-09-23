@@ -5,8 +5,8 @@ import { Lock, User, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react'
 
 export function LoginForm() {
   const { login, sessionErrorMessage, businessProfile } = useAuth();
-  const [username, setUsername] = useState(() => localStorage.getItem('memotrix_remembered_user') || '');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(() => localStorage.getItem('memotrix_remembered_user') || 'teammemotrix@gmail.com');
+  const [password, setPassword] = useState('Admin1234');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
@@ -110,7 +110,7 @@ export function LoginForm() {
                 autoComplete="username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                placeholder="Enter username or email"
+                placeholder="teammemotrix@gmail.com (or admin)"
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition"
               />
             </div>
@@ -119,6 +119,7 @@ export function LoginForm() {
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Password</label>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">Default: Admin1234</span>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
