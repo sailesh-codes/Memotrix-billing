@@ -44,7 +44,7 @@ export async function seedDatabase() {
     console.log('[SEED] Admin user verified (username: teammemotrix@gmail.com)');
   }
 
-  // 4. Seed Business Profile
+  // 4. Seed Business Profile (only insert if none exists; preserve existing user-entered profile data)
   const existingBp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ?', ['tenant-memotrix-01']);
   if (!existingBp) {
     await db.query(
@@ -65,23 +65,7 @@ export async function seedDatabase() {
         '/logo-default.png'
       ]
     );
-  } else {
-    await db.query(`UPDATE business_profile SET email = 'teammemotrix@gmail.com' WHERE id = ?`, [existingBp.id]);
   }
-
-  // Clear any legacy address containing Salem/Memotrix Studio
-  await db.query(
-    `UPDATE business_profile 
-     SET address = '' 
-     WHERE address LIKE '%Salem%' OR address LIKE '%636001%' OR TRIM(address) = 'Memotrix'`
-  );
-
-  // Ensure UPI ID is never an email address (auto-correct any legacy @gmail.com UPI IDs)
-  await db.query(
-    `UPDATE business_profile 
-     SET upi_id = 'viyasviyas82@okicici' 
-     WHERE upi_id = 'teammemotrix@gmail.com' OR upi_id LIKE '%@gmail.com' OR upi_id IS NULL OR upi_id = ''`
-  );
 
   // 5. Seed Bill Template Settings
   const existingTpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ?', ['tenant-memotrix-01']);

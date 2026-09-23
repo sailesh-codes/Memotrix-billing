@@ -170,12 +170,14 @@ export function ProductBillingForm({ onInvoiceCreated }) {
   }
 
   const handleCreateInvoice = async () => {
-    const custName = draft.selectedCustomer ? draft.selectedCustomer.name : draft.newCustomerName;
-    const custPhone = draft.selectedCustomer ? draft.selectedCustomer.phone : draft.newCustomerPhone;
-    const custEmail = draft.selectedCustomer ? draft.selectedCustomer.email : draft.newCustomerEmail;
+    const custName = (draft.newCustomerName || draft.selectedCustomer?.name || '').trim();
+    const custPhone = (draft.newCustomerPhone || draft.selectedCustomer?.phone || '').trim();
+    const custEmail = (draft.newCustomerEmail || draft.selectedCustomer?.email || '').trim();
+    const custAddress = (draft.newCustomerAddress || draft.selectedCustomer?.address || '').trim();
+    const custGstin = (draft.newCustomerGstin || draft.selectedCustomer?.gstin || '').trim();
 
     if (!custName) {
-      showToast('Please select or enter a Customer Name.', 'warning');
+      showToast('Please enter or select a Customer Name.', 'warning');
       return;
     }
 
@@ -195,18 +197,6 @@ export function ProductBillingForm({ onInvoiceCreated }) {
     setIsSubmitting(true);
     try {
       let custId = draft.selectedCustomer ? draft.selectedCustomer.id : null;
-      if (!draft.selectedCustomer && draft.newCustomerName) {
-        try {
-          const cRes = await customersApi.create({
-            name: draft.newCustomerName,
-            phone: draft.newCustomerPhone || '',
-            email: draft.newCustomerEmail || ''
-          });
-          custId = cRes.data?.customer?.id || null;
-        } catch (custErr) {
-          console.warn('[INVOICE] Customer profile auto-creation warning:', custErr);
-        }
-      }
 
       const finalPayments = isMultiTender && draft.payments && draft.payments.length > 0
         ? draft.payments
@@ -216,7 +206,9 @@ export function ProductBillingForm({ onInvoiceCreated }) {
         customer_id: custId,
         customer_name: custName,
         customer_phone: custPhone,
-        customer_email: custEmail || '',
+        customer_email: custEmail,
+        customer_address: custAddress,
+        customer_gstin: custGstin,
         due_date: draft.dueDate || null,
         items: draft.lineItems,
         payments: finalPayments,
@@ -230,6 +222,9 @@ export function ProductBillingForm({ onInvoiceCreated }) {
       const savedSignatory = templateSettings?.executed_by_value || 'Authorized Signatory';
       updateDraft({ executedBy: savedSignatory });
       showToast(`Invoice #${res.data.bill.bill_number} generated successfully!`, 'success');
+
+      // Refresh customers list immediately so new/updated customer shows up next time everywhere
+      fetchData();
 
       if (onInvoiceCreated) {
         onInvoiceCreated(res.data.bill.id);
@@ -321,60 +316,128 @@ export function ProductBillingForm({ onInvoiceCreated }) {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Select Registered Customer
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Select Registered Customer
+                  </label>
+                  {draft.selectedCustomer && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDraft({
+                          selectedCustomer: null,
+                          newCustomerName: '',
+                          newCustomerPhone: '',
+                          newCustomerEmail: '',
+                          newCustomerAddress: '',
+                          newCustomerGstin: ''
+                        });
+                      }}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-bold"
+                    >
+                      + Clear / New Customer
+                    </button>
+                  )}
+                </div>
                 <select
                   value={draft.selectedCustomer ? draft.selectedCustomer.id : ''}
                   onChange={e => {
                     const found = customers.find(c => c.id === e.target.value);
-                    updateDraft({ selectedCustomer: found || null });
+                    if (found) {
+                      updateDraft({
+                        selectedCustomer: found,
+                        newCustomerName: found.name || '',
+                        newCustomerPhone: found.phone || '',
+                        newCustomerEmail: found.email || '',
+                        newCustomerAddress: found.address || '',
+                        newCustomerGstin: found.gstin || ''
+                      });
+                    } else {
+                      updateDraft({
+                        selectedCustomer: null,
+                        newCustomerName: '',
+                        newCustomerPhone: '',
+                        newCustomerEmail: '',
+                        newCustomerAddress: '',
+                        newCustomerGstin: ''
+                      });
+                    }
                   }}
                   className="w-full p-3 form-select text-xs"
                 >
                   <option value="">-- Choose Existing Customer --</option>
                   {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                    <option key={c.id} value={c.id}>{c.name} {c.phone ? `(${c.phone})` : ''}</option>
                   ))}
                 </select>
               </div>
 
-              {!draft.selectedCustomer && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Name *</label>
-                    <input
-                      type="text"
-                      placeholder="Enter customer name..."
-                      value={draft.newCustomerName}
-                      onChange={e => updateDraft({ newCustomerName: e.target.value })}
-                      className="w-full p-3 form-input text-xs"
-                    />
+              {draft.selectedCustomer && (
+                <div className="bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800 flex items-center justify-between text-xs">
+                  <div className="text-blue-900 dark:text-blue-200">
+                    <span className="font-bold">Customer Profile:</span> {draft.selectedCustomer.name}
+                    {draft.selectedCustomer.phone && <span className="ml-1 text-slate-600 dark:text-slate-400">({draft.selectedCustomer.phone})</span>}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Phone</label>
-                      <input
-                        type="text"
-                        placeholder="Phone number"
-                        value={draft.newCustomerPhone}
-                        onChange={e => updateDraft({ newCustomerPhone: e.target.value })}
-                        className="w-full p-2.5 form-input text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                      <input
-                        type="email"
-                        placeholder="customer@email.com"
-                        value={draft.newCustomerEmail}
-                        onChange={e => updateDraft({ newCustomerEmail: e.target.value })}
-                        className="w-full p-2.5 form-input text-xs"
-                      />
-                    </div>
-                  </div>
+                  <span className="text-[10px] bg-blue-200/60 dark:bg-blue-900/60 px-2 py-0.5 rounded font-bold text-blue-800 dark:text-blue-300">
+                    Auto-Linked
+                  </span>
                 </div>
               )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Name *</label>
+                  <input
+                    type="text"
+                    placeholder="Enter customer name..."
+                    value={draft.newCustomerName || ''}
+                    onChange={e => updateDraft({ newCustomerName: e.target.value })}
+                    className="w-full p-3 form-input text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 9876543210"
+                      value={draft.newCustomerPhone || ''}
+                      onChange={e => updateDraft({ newCustomerPhone: e.target.value })}
+                      className="w-full p-2.5 form-input text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                    <input
+                      type="email"
+                      placeholder="customer@email.com"
+                      value={draft.newCustomerEmail || ''}
+                      onChange={e => updateDraft({ newCustomerEmail: e.target.value })}
+                      className="w-full p-2.5 form-input text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Billing Address</label>
+                  <input
+                    type="text"
+                    placeholder="Customer billing / delivery address..."
+                    value={draft.newCustomerAddress || ''}
+                    onChange={e => updateDraft({ newCustomerAddress: e.target.value })}
+                    className="w-full p-2.5 form-input text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">GSTIN (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 33AAAAA0000A1Z5"
+                    value={draft.newCustomerGstin || ''}
+                    onChange={e => updateDraft({ newCustomerGstin: e.target.value.toUpperCase() })}
+                    className="w-full p-2.5 form-input text-xs font-mono"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800">

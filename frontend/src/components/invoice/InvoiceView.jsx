@@ -391,6 +391,8 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
           <p className="font-semibold text-gray-900">{bill.customer_name}</p>
           {bill.customer_phone && <p className="text-gray-500">{bill.customer_phone}</p>}
           {bill.customer_email && <p className="text-blue-700 text-[11px] print:text-[10px] font-medium">{bill.customer_email}</p>}
+          {bill.customer_address && <p className="text-gray-600 text-[11px] print:text-[10px] max-w-[260px] whitespace-pre-line">{bill.customer_address}</p>}
+          {bill.customer_gstin && <p className="text-gray-600 text-[11px] print:text-[10px]">GSTIN: {bill.customer_gstin}</p>}
         </div>
         <div className="text-right">
           <span className="font-bold text-black block mb-0.5">Invoice Details</span>

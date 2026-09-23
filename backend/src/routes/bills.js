@@ -10,6 +10,7 @@ import { buildUpiString, sanitizeUpiId, generateQrDataUri, generateQrSvg } from 
 import { generateInvoicePdf } from '../services/pdfService.js';
 import { sendLowStockAlert } from '../services/emailService.js';
 import { encrypt, decrypt } from '../services/cryptoService.js';
+import { normalizePhone } from './customers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,7 +141,12 @@ router.get('/', async (req, res) => {
     const tenantId = req.user.tenantId || 'tenant-memotrix-01';
     const { startDate, endDate, customerId, status, search } = req.query;
 
-    let sql = `SELECT b.*, c.email as customer_email FROM bills b LEFT JOIN customers c ON b.customer_id = c.id WHERE b.tenant_id = ?`;
+    let sql = `
+      SELECT b.*, c.email as joined_cust_email, c.address as joined_cust_address, c.gstin as joined_cust_gstin 
+      FROM bills b 
+      LEFT JOIN customers c ON b.customer_id = c.id 
+      WHERE b.tenant_id = ?
+    `;
     const params = [tenantId];
 
     if (startDate) {
@@ -170,6 +176,9 @@ router.get('/', async (req, res) => {
 
     const bills = rawBills.map(b => ({
       ...b,
+      customer_email: b.customer_email || decrypt(b.joined_cust_email) || '',
+      customer_address: b.customer_address || b.joined_cust_address || '',
+      customer_gstin: b.customer_gstin || decrypt(b.joined_cust_gstin) || '',
       payment_status: deriveStatus(b)
     }));
 
@@ -189,6 +198,17 @@ router.get('/:id', async (req, res) => {
 
     const bill = await db.queryOne('SELECT * FROM bills WHERE (id = ? OR bill_number = ?) AND tenant_id = ?', [id, id, tenantId]);
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
+
+    // Fallback to customer profile contact details if bill fields are empty
+    if (bill.customer_id) {
+      const cust = await db.queryOne('SELECT * FROM customers WHERE id = ?', [bill.customer_id]);
+      if (cust) {
+        if (!bill.customer_address) bill.customer_address = cust.address || '';
+        if (!bill.customer_email) bill.customer_email = decrypt(cust.email) || '';
+        if (!bill.customer_phone) bill.customer_phone = decrypt(cust.phone) || '';
+        if (!bill.customer_gstin) bill.customer_gstin = decrypt(cust.gstin) || '';
+      }
+    }
 
     bill.payment_status = deriveStatus(bill);
 
@@ -240,7 +260,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const tenantId = req.user.tenantId || 'tenant-memotrix-01';
   const userId = req.user.id;
-  const { customer_id, customer_name, customer_phone, customer_email, due_date, items, payments, coupon_code, notes, executed_by, invoice_type } = req.body;
+  const { customer_id, customer_name, customer_phone, customer_email, customer_address, customer_gstin, due_date, items, payments, coupon_code, notes, executed_by, invoice_type } = req.body;
 
   if (!customer_name || !items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Customer name and at least one line item are required.' });
@@ -249,7 +269,38 @@ router.post('/', async (req, res) => {
   try {
     const bp = await db.queryOne('SELECT * FROM business_profile WHERE tenant_id = ? LIMIT 1', [tenantId]);
     const tpl = await db.queryOne('SELECT * FROM bill_template_settings WHERE tenant_id = ? LIMIT 1', [tenantId]);
-    const customer = customer_id ? await db.queryOne('SELECT * FROM customers WHERE id = ? AND tenant_id = ?', [customer_id, tenantId]) : null;
+
+    const cleanCustomerName = (customer_name || '').trim();
+    const cleanCustomerPhone = (customer_phone || '').trim();
+    const normPhone = normalizePhone(cleanCustomerPhone);
+    const cleanCustomerEmail = (customer_email || '').trim();
+    const cleanCustomerAddress = (customer_address || '').trim();
+    const cleanCustomerGstin = (customer_gstin || '').trim();
+
+    let effectiveCustomerId = customer_id || null;
+    let matchedCustomer = null;
+
+    if (effectiveCustomerId) {
+      matchedCustomer = await db.queryOne('SELECT * FROM customers WHERE id = ? AND tenant_id = ?', [effectiveCustomerId, tenantId]);
+    }
+
+    if (!matchedCustomer && normPhone) {
+      const allCustomers = await db.query('SELECT * FROM customers WHERE tenant_id = ?', [tenantId]);
+      matchedCustomer = allCustomers.find(c => {
+        const cPhoneNorm = normalizePhone(decrypt(c.phone));
+        return cPhoneNorm && cPhoneNorm === normPhone;
+      });
+    }
+
+    if (!matchedCustomer && cleanCustomerName) {
+      const byName = await db.query('SELECT * FROM customers WHERE tenant_id = ? AND LOWER(name) = LOWER(?)', [tenantId, cleanCustomerName]);
+      if (byName && byName.length === 1) {
+        const existingNorm = normalizePhone(decrypt(byName[0].phone));
+        if (!existingNorm || !normPhone || existingNorm === normPhone) {
+          matchedCustomer = byName[0];
+        }
+      }
+    }
 
     const billId = `bill-${Date.now()}`;
     const billNumber = await generateBillNumber(tenantId);
@@ -278,7 +329,7 @@ router.post('/', async (req, res) => {
       let cgstRate = 0, cgstAmt = 0, sgstRate = 0, sgstAmt = 0, igstRate = 0, igstAmt = 0;
       if (bp && bp.gst_enabled) {
         const itemTaxRate = parseFloat(item.tax_rate || 18);
-        const isIntraState = !customer || customer.state_code === bp.state_code;
+        const isIntraState = !matchedCustomer || matchedCustomer.state_code === bp.state_code;
         if (isIntraState) {
           cgstRate = itemTaxRate / 2;
           sgstRate = itemTaxRate / 2;
@@ -342,6 +393,49 @@ router.post('/', async (req, res) => {
     if (receivedAmount === 0) paymentStatus = 'pending';
     else if (receivedAmount < grandTotal) paymentStatus = 'partial';
 
+    // Persist or update customer profile in the customers database table
+    let persistedCustomer = null;
+    if (matchedCustomer) {
+      effectiveCustomerId = matchedCustomer.id;
+      const updatedPhone = cleanCustomerPhone || decrypt(matchedCustomer.phone) || '';
+      const updatedEmail = cleanCustomerEmail || decrypt(matchedCustomer.email) || '';
+      const updatedAddress = cleanCustomerAddress || matchedCustomer.address || '';
+      const updatedGstin = cleanCustomerGstin || decrypt(matchedCustomer.gstin) || '';
+
+      await db.query(
+        `UPDATE customers 
+         SET name = ?, phone = ?, email = ?, address = ?, gstin = ?,
+             total_spent = COALESCE(total_spent, 0) + ?,
+             outstanding_balance = COALESCE(outstanding_balance, 0) + ?
+         WHERE id = ? AND tenant_id = ?`,
+        [cleanCustomerName, encrypt(updatedPhone), encrypt(updatedEmail), updatedAddress, encrypt(updatedGstin), receivedAmount, balanceAmount, effectiveCustomerId, tenantId]
+      ).catch(e => console.warn('[BILLS] Customer update warning:', e.message));
+
+      persistedCustomer = await db.queryOne('SELECT * FROM customers WHERE id = ?', [effectiveCustomerId]);
+    } else if (cleanCustomerName) {
+      effectiveCustomerId = `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await db.query(
+        `INSERT INTO customers (id, tenant_id, name, phone, email, address, state_code, gstin, customer_type, notes, loyalty_points, total_spent, outstanding_balance)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [
+          effectiveCustomerId,
+          tenantId,
+          cleanCustomerName,
+          encrypt(cleanCustomerPhone),
+          encrypt(cleanCustomerEmail),
+          cleanCustomerAddress,
+          '33',
+          encrypt(cleanCustomerGstin),
+          'retail',
+          'Auto-created during invoice generation',
+          receivedAmount,
+          balanceAmount
+        ]
+      ).catch(e => console.warn('[BILLS] Customer auto-creation warning:', e.message));
+
+      persistedCustomer = await db.queryOne('SELECT * FROM customers WHERE id = ?', [effectiveCustomerId]);
+    }
+
     let execByValue = tpl?.executed_by_value || 'Authorized Signatory';
     if (executed_by && typeof executed_by === 'string' && executed_by.trim().length > 0 && executed_by.trim().toLowerCase() !== customer_name.trim().toLowerCase()) {
       execByValue = executed_by.trim();
@@ -350,9 +444,9 @@ router.post('/', async (req, res) => {
     const invType = invoice_type || 'tax_invoice';
 
     await db.query(
-      `INSERT INTO bills (id, tenant_id, bill_number, customer_id, customer_name, customer_phone, customer_email, bill_date, due_date, subtotal, discount_total, tax_total, grand_total, received_amount, balance_amount, payment_status, notes, executed_by, coupon_code, invoice_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [billId, tenantId, billNumber, customer_id || null, customer_name, customer_phone || '', customer_email || '', todayFormatted, due_date || null, subtotal, totalDiscount, totalTax, grandTotal, receivedAmount, balanceAmount, paymentStatus, notes || '', execByValue, coupon_code || null, invType]
+      `INSERT INTO bills (id, tenant_id, bill_number, customer_id, customer_name, customer_phone, customer_email, customer_address, customer_gstin, bill_date, due_date, subtotal, discount_total, tax_total, grand_total, received_amount, balance_amount, payment_status, notes, executed_by, coupon_code, invoice_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [billId, tenantId, billNumber, effectiveCustomerId, cleanCustomerName, cleanCustomerPhone, cleanCustomerEmail, cleanCustomerAddress, cleanCustomerGstin, todayFormatted, due_date || null, subtotal, totalDiscount, totalTax, grandTotal, receivedAmount, balanceAmount, paymentStatus, notes || '', execByValue, coupon_code || null, invType]
     );
 
     for (const item of processedItems) {
@@ -373,16 +467,6 @@ router.post('/', async (req, res) => {
 
     await db.query('DELETE FROM billing_drafts WHERE tenant_id = ? AND user_id = ?', [tenantId, userId]);
 
-    if (customer_id) {
-      await db.query(
-        `UPDATE customers 
-         SET total_spent = COALESCE(total_spent, 0) + ?,
-             outstanding_balance = COALESCE(outstanding_balance, 0) + ?
-         WHERE id = ? AND tenant_id = ?`,
-        [receivedAmount, balanceAmount, customer_id, tenantId]
-      ).catch(e => console.warn('[BILLS] Customer metrics update warning:', e.message));
-    }
-
     await db.query(
       `INSERT INTO bill_audit_logs (id, tenant_id, bill_id, action, changes_json, admin_id)
        VALUES (?, ?, ?, 'created', ?, ?)`,
@@ -394,7 +478,13 @@ router.post('/', async (req, res) => {
       message: 'Product Billing Invoice generated successfully',
       bill: createdBill,
       items: processedItems,
-      payments: processedPayments
+      payments: processedPayments,
+      customer: persistedCustomer ? {
+        ...persistedCustomer,
+        phone: decrypt(persistedCustomer.phone),
+        email: decrypt(persistedCustomer.email),
+        gstin: decrypt(persistedCustomer.gstin)
+      } : null
     });
 
   } catch (err) {

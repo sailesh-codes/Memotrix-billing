@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { schemaSql } from './schemaSql.js';
+import { decrypt, encrypt } from '../services/cryptoService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +39,13 @@ if (process.env.DATABASE_URL || process.env.PGHOST) {
     password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE || 'memotrix',
     port: process.env.PGPORT || 5432,
-    ssl: isCloudPg ? { rejectUnauthorized: false } : false
+    ssl: isCloudPg ? { rejectUnauthorized: false } : false,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000
+  });
+  pgPool.on('error', (err) => {
+    console.error('[DB] Unexpected PostgreSQL idle client error:', err.message);
   });
   console.log('[DB] PostgreSQL connected' + (isCloudPg ? ' (SSL enabled)' : ''));
 } else {
@@ -139,6 +146,8 @@ export async function initDb() {
   // Run auto-migrations for existing databases gracefully
   const migrations = [
     `ALTER TABLE bills ADD COLUMN customer_email TEXT`,
+    `ALTER TABLE bills ADD COLUMN customer_address TEXT`,
+    `ALTER TABLE bills ADD COLUMN customer_gstin TEXT`,
     `ALTER TABLE bills ADD COLUMN pdf_path TEXT`,
     `ALTER TABLE bills ADD COLUMN pdf_generated_at TIMESTAMP`,
     `ALTER TABLE users ADD COLUMN must_reset_password BOOLEAN DEFAULT TRUE`,
@@ -173,6 +182,52 @@ export async function initDb() {
     } catch (e) {
       // Ignore duplicate column error if column already exists
     }
+  }
+
+  // Auto-link legacy unlinked bills to customers or auto-create customer profiles
+  try {
+    const unlinkedBills = await query(
+      `SELECT id, customer_name, customer_phone, customer_email, customer_address, grand_total, received_amount, balance_amount 
+       FROM bills 
+       WHERE customer_id IS NULL AND customer_name IS NOT NULL`
+    );
+    if (unlinkedBills && unlinkedBills.length > 0) {
+      const allCusts = await query('SELECT id, name, phone FROM customers');
+      for (const b of unlinkedBills) {
+        if (!b.customer_name || !b.customer_name.trim()) continue;
+        const bPhone = (b.customer_phone || '').replace(/\D/g, '');
+        let matched = allCusts.find(c => {
+          const cPhone = (decrypt(c.phone) || '').replace(/\D/g, '');
+          return (bPhone && cPhone && bPhone === cPhone) ||
+                 (c.name && b.customer_name.trim().toLowerCase() === c.name.trim().toLowerCase());
+        });
+
+        if (!matched) {
+          const newCustId = `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          await query(
+            `INSERT INTO customers (id, tenant_id, name, phone, email, address, state_code, gstin, customer_type, notes, loyalty_points, total_spent, outstanding_balance)
+             VALUES (?, 'tenant-memotrix-01', ?, ?, ?, ?, '33', '', 'retail', 'Auto-created from existing bill', 0, ?, ?)`,
+            [
+              newCustId,
+              b.customer_name.trim(),
+              encrypt(bPhone),
+              encrypt(b.customer_email || ''),
+              b.customer_address || '',
+              parseFloat(b.received_amount || 0),
+              parseFloat(b.balance_amount || 0)
+            ]
+          );
+          matched = { id: newCustId, name: b.customer_name.trim(), phone: bPhone };
+          allCusts.push(matched);
+        }
+
+        if (matched) {
+          await query('UPDATE bills SET customer_id = ? WHERE id = ?', [matched.id, b.id]);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[DB] Auto-linking legacy bills warning:', err.message);
   }
 }
 

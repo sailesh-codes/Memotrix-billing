@@ -5,6 +5,18 @@ import { encrypt, decrypt } from '../services/cryptoService.js';
 
 const router = express.Router();
 
+export function normalizePhone(phone) {
+  if (!phone) return '';
+  const digits = phone.toString().replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits.slice(1);
+  }
+  return digits || phone.toString().trim();
+}
+
 /**
  * GET /api/customers
  */
@@ -27,9 +39,11 @@ router.get('/', authenticate, async (req, res) => {
 
     if (search && typeof search === 'string' && search.trim().length > 0) {
       const term = search.trim().toLowerCase();
+      const normTerm = normalizePhone(term);
       const filtered = decrypted.filter(c => {
         const nameMatch = c.name && c.name.toLowerCase().includes(term);
-        const phoneMatch = c.phone && c.phone.toLowerCase().includes(term);
+        const cPhone = c.phone || '';
+        const phoneMatch = cPhone.includes(term) || (normTerm && normalizePhone(cPhone).includes(normTerm));
         const emailMatch = c.email && c.email.toLowerCase().includes(term);
         const addressMatch = c.address && c.address.toLowerCase().includes(term);
         const gstinMatch = c.gstin && c.gstin.toLowerCase().includes(term);
@@ -81,6 +95,7 @@ router.post('/', authenticate, async (req, res) => {
 
   const cleanName = name.trim();
   const cleanPhone = (phone || '').toString().trim();
+  const normPhone = normalizePhone(cleanPhone);
   const cleanEmail = (email || '').toString().trim();
   const cleanAddress = (address || '').toString().trim();
   const cleanStateCode = (state_code || '33').toString().trim();
@@ -89,26 +104,31 @@ router.post('/', authenticate, async (req, res) => {
   const cleanNotes = (notes || '').toString().trim();
 
   try {
-    // If phone is provided, check if an existing customer has this phone number
-    if (cleanPhone) {
+    // If phone is provided, check if an existing customer has this phone number (normalized)
+    if (normPhone) {
       const existingCustomers = await db.query('SELECT * FROM customers WHERE tenant_id = ?', [tenantId]);
-      const matched = existingCustomers.find(c => decrypt(c.phone) === cleanPhone);
+      const matched = existingCustomers.find(c => {
+        const cPhoneNorm = normalizePhone(decrypt(c.phone));
+        return cPhoneNorm && cPhoneNorm === normPhone;
+      });
+
       if (matched) {
         // Update details if newer values provided
         const updatedEmail = cleanEmail || decrypt(matched.email) || '';
         const updatedAddress = cleanAddress || matched.address || '';
         const updatedGstin = cleanGstin || decrypt(matched.gstin) || '';
         const updatedNotes = cleanNotes || matched.notes || '';
+        const updatedPhone = cleanPhone || decrypt(matched.phone) || '';
 
         await db.query(
           `UPDATE customers
-           SET name = ?, email = ?, address = ?, gstin = ?, notes = ?
+           SET name = ?, phone = ?, email = ?, address = ?, gstin = ?, notes = ?
            WHERE id = ?`,
-          [cleanName, encrypt(updatedEmail), updatedAddress, encrypt(updatedGstin), updatedNotes, matched.id]
+          [cleanName, encrypt(updatedPhone), encrypt(updatedEmail), updatedAddress, encrypt(updatedGstin), updatedNotes, matched.id]
         );
 
         const updated = await db.queryOne('SELECT * FROM customers WHERE id = ?', [matched.id]);
-        updated.phone = cleanPhone;
+        updated.phone = updatedPhone;
         updated.email = updatedEmail;
         updated.gstin = updatedGstin;
 

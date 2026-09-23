@@ -10,6 +10,8 @@ const DEFAULT_DRAFT = {
   newCustomerName: '',
   newCustomerPhone: '',
   newCustomerEmail: '',
+  newCustomerAddress: '',
+  newCustomerGstin: '',
   lineItems: [],
   paymentMethod: 'cash',
   payments: [],

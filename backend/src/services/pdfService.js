@@ -173,6 +173,14 @@ export async function generatePdfKitInvoice(data = {}) {
         doc.font('Helvetica').fontSize(8.5).fillColor('#1D4ED8').text(bill.customer_email, left, infoLeftY);
         infoLeftY += 11;
       }
+      if (bill.customer_address) {
+        doc.font('Helvetica').fontSize(8.5).fillColor('#4B5563').text(bill.customer_address, left, infoLeftY, { width: 220 });
+        infoLeftY += 12;
+      }
+      if (bill.customer_gstin) {
+        doc.font('Helvetica').fontSize(8.5).fillColor('#4B5563').text(`GSTIN: ${bill.customer_gstin}`, left, infoLeftY);
+        infoLeftY += 11;
+      }
 
       // Right info
       doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#000000').text('Invoice Details', left, infoTop, { width: contentWidth, align: 'right' });

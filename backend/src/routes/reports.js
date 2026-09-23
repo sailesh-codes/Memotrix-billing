@@ -2,6 +2,8 @@ import express from 'express';
 import xlsx from 'xlsx';
 import db from '../db/db.js';
 import { authenticate } from '../middleware/auth.js';
+import { decrypt } from '../services/cryptoService.js';
+import { normalizePhone } from './customers.js';
 
 const router = express.Router();
 
@@ -21,7 +23,7 @@ router.get('/dashboard', authenticate, async (req, res) => {
        FROM bills
        WHERE payment_status != 'void'
        GROUP BY bill_date
-       ORDER BY created_at DESC LIMIT 30`
+       ORDER BY MAX(created_at) DESC LIMIT 30`
     );
 
     // Payment method breakdown
@@ -93,13 +95,21 @@ router.get('/global-search', authenticate, async (req, res) => {
       [term, term, term]
     );
 
-    const customers = await db.query(
-      `SELECT id, name, phone, email
-       FROM customers
-       WHERE name LIKE ? OR phone LIKE ? OR email LIKE ?
-       ORDER BY name ASC LIMIT 5`,
-      [term, term, term]
+    const allCustomers = await db.query(
+      `SELECT id, name, phone, email FROM customers`
     );
+    const normQ = normalizePhone(q);
+    const customers = allCustomers.map(c => ({
+      ...c,
+      phone: decrypt(c.phone),
+      email: decrypt(c.email)
+    })).filter(c => {
+      const nameMatch = c.name && c.name.toLowerCase().includes(q.toLowerCase());
+      const cPhone = c.phone || '';
+      const phoneMatch = cPhone.includes(q) || (normQ && normalizePhone(cPhone).includes(normQ));
+      const emailMatch = c.email && c.email.toLowerCase().includes(q.toLowerCase());
+      return nameMatch || phoneMatch || emailMatch;
+    }).slice(0, 5);
 
     return res.json({ invoices, products, customers });
   } catch (err) {
@@ -214,7 +224,7 @@ router.get('/export-excel', authenticate, async (req, res) => {
     const monthlySales = await db.query(
       `SELECT bill_date as "Date", SUM(grand_total) as "Daily Revenue (₹)", COUNT(*) as "Bills Issued"
        FROM bills WHERE payment_status != 'void'
-       GROUP BY bill_date ORDER BY created_at DESC LIMIT 60`
+       GROUP BY bill_date ORDER BY MAX(created_at) DESC LIMIT 60`
     );
     const wsMonthly = xlsx.utils.json_to_sheet(monthlySales);
     xlsx.utils.book_append_sheet(wb, wsMonthly, 'Monthly Sales');
