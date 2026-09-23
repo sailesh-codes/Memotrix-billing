@@ -127,7 +127,9 @@ export function SettingsPage() {
       setWebsite(businessProfile.website || '');
       setGstEnabled(!!businessProfile.gst_enabled);
       setUpiId(businessProfile.upi_id || '');
-      setLogoUrl(businessProfile.logo_url || '/logo-default.png');
+      const initialLogo = (businessProfile.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png') ? businessProfile.logo_url : '/logo-default.png';
+      setLogoUrl(initialLogo);
+      setLogoOriginalUrl(businessProfile.logo_original_url || initialLogo);
       setPayeeName(businessProfile.payee_name || businessProfile.business_name || 'Memotrix');
       setMerchantName(businessProfile.merchant_name || '');
       setCurrency(businessProfile.currency || 'INR');
@@ -277,9 +279,11 @@ export function SettingsPage() {
         gst_enabled: gstEnabled,
         upi_id: upiId,
         website,
-        logo_url: '/logo-default.png'
+        logo_url: '/logo-default.png',
+        logo_original_url: '/logo-default.png'
       });
       setLogoUrl('/logo-default.png');
+      setLogoOriginalUrl('/logo-default.png');
       await refreshSettings();
       showToast('Logo reset to default Memotrix logo.', 'info');
     } catch (err) {

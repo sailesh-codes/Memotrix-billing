@@ -371,9 +371,20 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
         </div>
         <div className="flex items-center justify-end max-w-[160px] max-h-[80px] print:max-w-[120px] print:max-h-[50px]">
           <img
-            src={bp.logo_data_uri || bp.logo_original_url || bp.logo_url || '/logo-default.png'}
+            src={
+              (bp.logo_data_uri && bp.logo_data_uri.length > 200)
+                ? bp.logo_data_uri
+                : ((bp.logo_original_url && bp.logo_original_url.length > 200 && !bp.logo_original_url.includes('AAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='))
+                    ? bp.logo_original_url
+                    : ((bp.logo_url && bp.logo_url !== '/uploads/logo_serverless.png') ? bp.logo_url : '/logo-default.png'))
+            }
             alt="Business Logo"
             crossOrigin="anonymous"
+            onError={(e) => {
+              if (!e.target.src.endsWith('/logo-default.png')) {
+                e.target.src = '/logo-default.png';
+              }
+            }}
             className="max-h-[80px] max-w-[160px] print:max-h-[50px] print:max-w-[120px] w-auto h-auto object-contain flex-shrink-0 bg-transparent"
           />
         </div>

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
 import { buildUpiString, sanitizeUpiId } from './qrService.js';
+import { resolveLogoBuffer } from './logoService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,46 +109,14 @@ export async function generatePdfKitInvoice(data = {}) {
         y += 12;
       }
 
-      // Logo on top right
-      const logoCandidates = [
-        bp.logo_original_url,
-        bp.logo_url,
-        path.join(backendDir, 'public', 'logo-default.png'),
-        path.join(backendDir, 'assets', 'logo-default.png'),
-        path.join(process.cwd(), 'public', 'logo-default.png'),
-        path.join(process.cwd(), 'assets', 'logo-default.png')
-      ];
-      for (const cand of logoCandidates) {
-        if (!cand) continue;
-        if (typeof cand === 'string' && cand.startsWith('data:image/')) {
-          try {
-            const b64 = cand.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
-            doc.image(Buffer.from(b64, 'base64'), right - 110, 32, { fit: [110, 55], align: 'right' });
-            break;
-          } catch (e) {}
+      // Logo on top right (Guaranteed to embed site logo or custom logo)
+      try {
+        const logoBuffer = resolveLogoBuffer(bp?.logo_original_url, bp?.logo_url);
+        if (logoBuffer && logoBuffer.length >= 200) {
+          doc.image(logoBuffer, right - 110, 32, { fit: [110, 55], align: 'right' });
         }
-        const clean = cand.split('?')[0].replace(/^\//, '');
-        const candidatePaths = [
-          cand,
-          path.join(backendDir, clean),
-          path.join(backendDir, 'public', clean),
-          path.join(backendDir, 'public', 'uploads', path.basename(clean)),
-          path.join(process.cwd(), clean),
-          path.join(process.cwd(), 'public', clean)
-        ];
-        let resolved = null;
-        for (const p of candidatePaths) {
-          if (p && fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
-            resolved = p;
-            break;
-          }
-        }
-        if (resolved) {
-          try {
-            doc.image(resolved, right - 110, 32, { fit: [110, 55], align: 'right' });
-            break;
-          } catch (e) {}
-        }
+      } catch (logoErr) {
+        console.warn('[PDF LOGO] Failed to embed logo:', logoErr.message);
       }
 
       // 2. Title Bar

@@ -184,6 +184,17 @@ export async function initDb() {
     }
   }
 
+  // Ensure business_profile has valid site logo and auto-clean any legacy dummy 1x1 or nonexistent placeholder logos
+  try {
+    await query(
+      `UPDATE business_profile 
+       SET logo_url = '/logo-default.png', logo_original_url = '/logo-default.png' 
+       WHERE logo_url = '/uploads/logo_serverless.png' 
+          OR logo_original_url LIKE '%iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=%'
+          OR (logo_url IS NULL AND logo_original_url IS NULL)`
+    );
+  } catch (e) {}
+
   // Auto-link legacy unlinked bills to customers or auto-create customer profiles
   try {
     const unlinkedBills = await query(

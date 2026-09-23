@@ -11,6 +11,7 @@ import { winstonLogger } from './middleware/logger.js';
 import db from './db/db.js';
 import { seedDatabase } from './db/seed.js';
 import { initScheduler } from './services/schedulerService.js';
+import { MEMOTRIX_DEFAULT_LOGO_BUFFER } from './services/logoService.js';
 
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
@@ -98,18 +99,38 @@ app.use(['/uploads/:filename', '/api/uploads/:filename'], async (req, res, next)
     if (stored && stored.startsWith('data:image/')) {
       const match = stored.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
       if (match) {
-        res.setHeader('Content-Type', match[1]);
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.send(Buffer.from(match[2], 'base64'));
+        const buf = Buffer.from(match[2], 'base64');
+        if (buf.length >= 200) {
+          res.setHeader('Content-Type', match[1]);
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          return res.send(buf);
+        }
       }
     }
   } catch (e) {}
   next();
 });
+
 if (fs.existsSync(assetsDir)) {
   app.use('/assets', express.static(assetsDir, staticOptions));
-  app.use('/logo-default.png', express.static(path.join(assetsDir, 'logo-default.png'), staticOptions));
 }
+
+// Guaranteed site logo endpoint: always serves the official Memotrix site logo
+app.get(['/logo-default.png', '/api/logo-default.png'], (req, res) => {
+  const candidates = [
+    path.join(publicDir, 'logo-default.png'),
+    path.join(assetsDir, 'logo-default.png'),
+    path.join(path.dirname(__dirname), 'frontend', 'public', 'logo-default.png'),
+    path.join(path.dirname(__dirname), 'frontend', 'dist', 'logo-default.png')
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
+      return res.sendFile(path.resolve(p));
+    }
+  }
+  res.setHeader('Content-Type', 'image/png');
+  return res.send(MEMOTRIX_DEFAULT_LOGO_BUFFER);
+});
 
 app.use('/api/', apiLimiter);
 

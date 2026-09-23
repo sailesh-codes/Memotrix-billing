@@ -6,7 +6,7 @@ import { Lock, User, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react'
 export function LoginForm() {
   const { login, sessionErrorMessage, businessProfile } = useAuth();
   const [username, setUsername] = useState(() => localStorage.getItem('memotrix_remembered_user') || 'teammemotrix@gmail.com');
-  const [password, setPassword] = useState('Admin1234');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
@@ -67,8 +67,13 @@ export function LoginForm() {
         <div className="text-center space-y-2">
           <div className="w-[72px] h-[72px] mx-auto flex items-center justify-center">
             <img
-              src={businessProfile?.logo_url || '/logo-default.png'}
+              src={businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png' ? businessProfile.logo_url : '/logo-default.png'}
               alt="Memotrix Logo"
+              onError={(e) => {
+                if (!e.target.src.endsWith('/logo-default.png')) {
+                  e.target.src = '/logo-default.png';
+                }
+              }}
               className="max-w-[72px] max-h-[72px] object-contain drop-shadow-md"
             />
           </div>
@@ -117,10 +122,7 @@ export function LoginForm() {
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Password</label>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">Default: Admin1234</span>
-            </div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Password</label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
               <input

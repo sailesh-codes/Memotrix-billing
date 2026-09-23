@@ -8,6 +8,7 @@ import { authenticate } from '../middleware/auth.js';
 import { numberToWords } from '../services/numberToWords.js';
 import { buildUpiString, sanitizeUpiId, generateQrDataUri, generateQrSvg } from '../services/qrService.js';
 import { generateInvoicePdf } from '../services/pdfService.js';
+import { resolveLogoDataUri } from '../services/logoService.js';
 import { sendLowStockAlert } from '../services/emailService.js';
 import { encrypt, decrypt } from '../services/cryptoService.js';
 import { normalizePhone } from './customers.js';
@@ -233,7 +234,7 @@ router.get('/:id', async (req, res) => {
     });
     const upiQrDataUri = await generateQrDataUri(upiString);
     const qrSvg = await generateQrSvg(upiString);
-    const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url || bp?.logo_url);
+    const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url, bp?.logo_url);
     if (bp) {
       bp.logo_data_uri = logoDataUri;
       bp.upi_id = effectiveUpiId;
@@ -643,72 +644,12 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-function getLogoBase64DataUri(logoUrl) {
-  let targetPath = null;
-
-  if (logoUrl && typeof logoUrl === 'string' && logoUrl.trim().length > 0) {
-    const rawUrl = logoUrl.trim().split('?')[0];
-    if (rawUrl.startsWith('data:image/')) {
-      return rawUrl;
-    }
-
-    const cleanRelative = rawUrl.replace(/^\//, '');
-    const candidatePaths = [
-      path.join(backendDir, 'public', cleanRelative),
-      path.join(backendDir, 'public', 'uploads', path.basename(cleanRelative)),
-      path.join(backendDir, cleanRelative),
-      path.join(backendDir, 'assets', cleanRelative),
-      path.join(process.cwd(), 'public', cleanRelative),
-      path.join(process.cwd(), cleanRelative),
-      path.join(process.cwd(), 'assets', cleanRelative),
-      path.join(process.cwd(), '..', 'frontend', 'public', cleanRelative),
-      path.resolve(cleanRelative)
-    ];
-
-    for (const p of candidatePaths) {
-      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
-        targetPath = p;
-        break;
-      }
-    }
-  }
-
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    const fallbackPaths = [
-      path.join(backendDir, 'public', 'logo-default.png'),
-      path.join(backendDir, 'assets', 'logo-default.png'),
-      path.join(process.cwd(), 'public', 'logo-default.png'),
-      path.join(process.cwd(), 'assets', 'logo-default.png'),
-      path.join(process.cwd(), '..', 'frontend', 'public', 'logo-default.png'),
-      path.join(process.cwd(), 'logo-default.png')
-    ];
-    for (const p of fallbackPaths) {
-      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
-        targetPath = p;
-        break;
-      }
-    }
-  }
-
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    console.warn('[LOGO BASE64] Could not find any logo file on disk.');
-    return '/logo-default.png';
-  }
-
+function getLogoBase64DataUri(logoOriginalUrl, logoUrl) {
   try {
-    const ext = path.extname(targetPath).toLowerCase();
-    let mimeType = 'image/png';
-    if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-    else if (ext === '.svg') mimeType = 'image/svg+xml';
-    else if (ext === '.webp') mimeType = 'image/webp';
-    else if (ext === '.png') mimeType = 'image/png';
-
-    const fileBuffer = fs.readFileSync(targetPath);
-    const base64Data = fileBuffer.toString('base64');
-    return `data:${mimeType};base64,${base64Data}`;
+    return resolveLogoDataUri(logoOriginalUrl, logoUrl);
   } catch (err) {
-    console.error('[LOGO BASE64] Failed to read logo file:', err.message);
-    return '/logo-default.png';
+    console.error('[LOGO BASE64] Failed to resolve logo data URI:', err.message);
+    return resolveLogoDataUri(null, null);
   }
 }
 
@@ -716,7 +657,7 @@ export function buildInvoiceHtml(bill, items, bp, tpl, amountInWords, upiQrDataU
   const totalQty = items.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
   const executedByName = bill.executed_by || tpl?.executed_by_value || 'Authorized Signatory';
   const effectiveUpiId = bp?.upi_id || 'viyasviyas82@okicici';
-  const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url || bp?.logo_url);
+  const logoDataUri = getLogoBase64DataUri(bp?.logo_original_url, bp?.logo_url);
 
   let pdfTitle = 'TAX INVOICE';
   if (bill.invoice_type === 'receipt') pdfTitle = 'CASH RECEIPT';

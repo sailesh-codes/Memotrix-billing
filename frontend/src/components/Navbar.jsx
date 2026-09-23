@@ -82,8 +82,13 @@ export function Navbar() {
         <div className="flex items-center space-x-3">
           <div className="w-[36px] h-[36px] flex items-center justify-center">
             <img
-              src={businessProfile?.logo_url || '/logo-default.png'}
+              src={businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png' ? businessProfile.logo_url : '/logo-default.png'}
               alt="Memotrix Logo"
+              onError={(e) => {
+                if (!e.target.src.endsWith('/logo-default.png')) {
+                  e.target.src = '/logo-default.png';
+                }
+              }}
               className="max-w-[36px] max-h-[36px] object-contain drop-shadow-sm"
             />
           </div>

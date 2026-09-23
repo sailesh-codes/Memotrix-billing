@@ -107,6 +107,20 @@ router.put('/business-profile', async (req, res) => {
       );
     }
 
+    // Invalidate cached PDFs on disk and database to ensure fresh invoice downloads reflect the profile & logo
+    try {
+      const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
+      if (fs.existsSync(pdfStorageDir)) {
+        const pdfFiles = fs.readdirSync(pdfStorageDir);
+        for (const f of pdfFiles) {
+          if (f.endsWith('.pdf')) {
+            try { fs.unlinkSync(path.join(pdfStorageDir, f)); } catch (e) {}
+          }
+        }
+      }
+      await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
+    } catch (cacheErr) {}
+
     return res.json({ message: 'Business profile updated successfully' });
   } catch (err) {
     console.error('[SETTINGS] Update business profile error:', err);
