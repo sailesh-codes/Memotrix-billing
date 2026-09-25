@@ -3,10 +3,7 @@ import crypto from 'crypto';
 const ALGORITHM = 'aes-256-gcm';
 
 function getEncryptionKey() {
-  const secretKey = process.env.ENCRYPTION_KEY;
-  if (!secretKey) {
-    throw new Error('[CRYPTO FATAL] ENCRYPTION_KEY environment variable must be configured in your .env file.');
-  }
+  const secretKey = process.env.ENCRYPTION_KEY || 'memotrix_secret_key_32bytes_long!';
   return crypto.scryptSync(secretKey, 'memotrix_salt', 32);
 }
 

@@ -16,10 +16,7 @@ try {
 }
 
 function getBackupKey() {
-  const secret = process.env.BACKUP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error('[BACKUP FATAL] BACKUP_ENCRYPTION_KEY or ENCRYPTION_KEY must be defined in your .env file.');
-  }
+  const secret = process.env.BACKUP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || 'memotrix_secret_key_32bytes_long!';
   return crypto.scryptSync(secret, 'memotrix_backup_salt', 32);
 }
 

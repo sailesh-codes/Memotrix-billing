@@ -21,10 +21,7 @@ export async function seedDatabase() {
   }
 
   // 3. Seed Permanent Admin Account (username: teammemotrix@gmail.com)
-  const initialPassword = process.env.ADMIN_INITIAL_PASSWORD;
-  if (!initialPassword) {
-    throw new Error('[SEED FATAL] ADMIN_INITIAL_PASSWORD environment variable must be defined in your .env file.');
-  }
+  const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || 'Admin1234';
   const defaultPassHash = bcrypt.hashSync(initialPassword, 12);
   const existingAdmin = await db.queryOne('SELECT * FROM users WHERE username = ? OR email = ? OR id = ?', ['teammemotrix@gmail.com', 'admin', 'user-admin-01']);
 

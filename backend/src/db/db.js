@@ -54,8 +54,8 @@ export async function connectMongo(silent = false) {
   }
 
   if (!MONGODB_URI) {
-    const errMsg = '[DB FATAL] MONGODB_URI is not set. Please provide it in your .env file.';
-    console.error(errMsg);
+    const errMsg = '[DB NOTICE] MONGODB_URI is not set. Add MONGODB_URI in Vercel Dashboard -> Settings -> Environment Variables.';
+    if (!silent) console.warn(errMsg);
     throw new Error(errMsg);
   }
 
@@ -112,7 +112,7 @@ export async function connectMongo(silent = false) {
  * Background auto-reconnect loop to connect as soon as Atlas IP whitelist is active
  */
 function startBackgroundReconnect() {
-  if (reconnectInterval) return;
+  if (process.env.VERCEL || reconnectInterval) return;
   reconnectInterval = setInterval(async () => {
     if (isMongoConnected()) {
       clearInterval(reconnectInterval);
@@ -184,9 +184,20 @@ export async function syncTableToMongo(tableName) {
     const rows = await execMemSql(`SELECT * FROM ${tableName}`);
     const col = db.collection(tableName);
 
-    await col.deleteMany({});
     if (rows && rows.length > 0) {
-      await col.insertMany(rows);
+      const ops = rows.map(r => {
+        const clean = { ...r };
+        delete clean._id;
+        const filter = clean.id ? { id: clean.id } : { ...clean };
+        return {
+          replaceOne: {
+            filter,
+            replacement: clean,
+            upsert: true
+          }
+        };
+      });
+      await col.bulkWrite(ops);
     }
   } catch (err) {
     console.error(`[MongoDB] Error syncing table "${tableName}" to MongoDB Atlas:`, err.message);
@@ -253,10 +264,12 @@ export async function query(sql, params = []) {
   const isMutation = /^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql);
   if (isMutation && isMongoConnected()) {
     const tables = detectAffectedTables(sql);
-    for (const t of tables) {
-      syncTableToMongo(t).catch((err) => {
-        console.error(`[MongoDB] Background sync failed for ${t}:`, err.message);
-      });
+    const syncPromises = tables.map(t => syncTableToMongo(t).catch((err) => {
+      console.error(`[MongoDB] Background sync failed for ${t}:`, err.message);
+    }));
+    // In serverless environments, await sync to prevent lambda freezing before Atlas write completes
+    if (process.env.VERCEL) {
+      await Promise.all(syncPromises);
     }
   }
 
