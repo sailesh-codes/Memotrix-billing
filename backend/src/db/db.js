@@ -1,115 +1,218 @@
+import mongoose from 'mongoose';
 import sqlite3 from 'sqlite3';
-import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { schemaSql } from './schemaSql.js';
-import { decrypt, encrypt } from '../services/cryptoService.js';
+import config from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let isPg = false;
-let pgPool = null;
-let sqliteDb = null;
+const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri || 'mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || config.mongodbDbName || 'memotrix';
 
-const defaultSqlitePath = process.env.VERCEL
-  ? path.join('/tmp', 'memotrix.sqlite')
-  : path.join(__dirname, 'memotrix.sqlite');
-const dbPath = process.env.SQLITE_DB_PATH || defaultSqlitePath;
+let mongoConnection = null;
+let mongoDb = null;
+let memDb = null;
+let isInitialized = false;
 
-if (process.env.DATABASE_URL || process.env.PGHOST) {
-  isPg = true;
-  const { Pool } = pg;
-  const isCloudPg = Boolean(
-    process.env.PGSSL === 'true' ||
-    (process.env.DATABASE_URL && (
-      process.env.DATABASE_URL.includes('sslmode=require') ||
-      process.env.DATABASE_URL.includes('.neon.tech') ||
-      process.env.DATABASE_URL.includes('.supabase.co') ||
-      process.env.DATABASE_URL.includes('render.com') ||
-      process.env.DATABASE_URL.includes('railway.app') ||
-      (!process.env.DATABASE_URL.includes('localhost') && !process.env.DATABASE_URL.includes('127.0.0.1'))
-    ))
-  );
-  pgPool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    host: process.env.PGHOST,
-    user: process.env.PGUSER,
-    password: process.env.PGPASSWORD,
-    database: process.env.PGDATABASE || 'memotrix',
-    port: process.env.PGPORT || 5432,
-    ssl: isCloudPg ? { rejectUnauthorized: false } : false,
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000
-  });
-  pgPool.on('error', (err) => {
-    console.error('[DB] Unexpected PostgreSQL idle client error:', err.message);
-  });
-  console.log('[DB] PostgreSQL connected' + (isCloudPg ? ' (SSL enabled)' : ''));
-} else {
-  sqlite3.verbose();
-  sqliteDb = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error('[DB] SQLite connection error:', err.message);
+export const KNOWN_TABLES = [
+  'tenants',
+  'users',
+  'billing_drafts',
+  'password_reset_codes',
+  'business_profile',
+  'bill_template_settings',
+  'feature_flags',
+  'categories',
+  'products',
+  'customers',
+  'coupons',
+  'customer_discount_rules',
+  'bills',
+  'bill_items',
+  'bill_payments',
+  'inventory_adjustments',
+  'bill_audit_logs',
+  'login_audit_logs',
+  'recurring_templates',
+  'email_delivery_logs',
+  'otp_verifications',
+  'sms_delivery_logs',
+  'password_history',
+  'account_security_logs'
+];
+
+/**
+ * Establish connection to MongoDB Atlas using Mongoose
+ */
+export async function connectMongo() {
+  if (mongoConnection && mongoose.connection.readyState === 1) {
+    return mongoConnection;
+  }
+
+  console.log('[MongoDB] Connecting to MongoDB Atlas...');
+  try {
+    mongoConnection = await mongoose.connect(MONGODB_URI, {
+      dbName: MONGODB_DB_NAME,
+      serverSelectionTimeoutMS: 15000,
+      retryWrites: true,
+      w: 'majority'
+    });
+
+    mongoDb = mongoose.connection.db;
+
+    console.log(`[MongoDB] Successfully connected to MongoDB Atlas! (Database: ${MONGODB_DB_NAME})`);
+
+    mongoose.connection.on('error', (err) => {
+      console.error('[MongoDB] Connection error:', err.message);
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.warn('[MongoDB] Disconnected from MongoDB Atlas. Attempting reconnect...');
+    });
+
+    mongoose.connection.on('reconnected', () => {
+      console.log('[MongoDB] Reconnected to MongoDB Atlas.');
+    });
+
+    return mongoConnection;
+  } catch (err) {
+    console.error('[MongoDB] Failed to connect to MongoDB Atlas:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * Get native MongoDB database instance
+ */
+export function getMongoDb() {
+  return mongoDb || mongoose.connection?.db || null;
+}
+
+/**
+ * Check if MongoDB is connected
+ */
+export function isMongoConnected() {
+  return mongoose.connection && mongoose.connection.readyState === 1;
+}
+
+/**
+ * Low-level execution on in-memory execution engine
+ */
+function execMemSql(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    if (!memDb) {
+      return reject(new Error('In-memory database engine not initialized'));
+    }
+    const trimmed = sql.trim().toUpperCase();
+    const isSelect = trimmed.startsWith('SELECT') || trimmed.startsWith('PRAGMA');
+    if (isSelect) {
+      memDb.all(sql, params, (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      });
     } else {
-      console.log('[DB] SQLite connected');
+      memDb.run(sql, params, function (err) {
+        if (err) return reject(err);
+        resolve({ lastID: this.lastID, changes: this.changes });
+      });
     }
   });
 }
 
 /**
- * Safely convert SQLite ? parameter placeholders to PostgreSQL $1, $2
- * while ignoring question marks inside SQL string literals
+ * Synchronize all rows of an in-memory table to its corresponding MongoDB collection
  */
-export function convertPlaceholders(sql) {
-  let paramIndex = 1;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let result = '';
+export async function syncTableToMongo(tableName) {
+  const db = getMongoDb();
+  if (!db) return;
 
-  for (let i = 0; i < sql.length; i++) {
-    const char = sql[i];
-    if (char === "'" && (i === 0 || sql[i - 1] !== '\\')) {
-      inSingleQuote = !inSingleQuote;
-      result += char;
-    } else if (char === '"' && (i === 0 || sql[i - 1] !== '\\')) {
-      inDoubleQuote = !inDoubleQuote;
-      result += char;
-    } else if (char === '?' && !inSingleQuote && !inDoubleQuote) {
-      result += `$${paramIndex++}`;
-    } else {
-      result += char;
+  try {
+    const rows = await execMemSql(`SELECT * FROM ${tableName}`);
+    const col = db.collection(tableName);
+
+    // Replace collection documents with latest rows
+    await col.deleteMany({});
+    if (rows && rows.length > 0) {
+      await col.insertMany(rows);
+    }
+  } catch (err) {
+    console.error(`[MongoDB] Error syncing table "${tableName}" to MongoDB Atlas:`, err.message);
+  }
+}
+
+/**
+ * Load documents from a MongoDB collection into the in-memory engine table
+ */
+export async function loadTableFromMongo(tableName) {
+  const db = getMongoDb();
+  if (!db) return 0;
+
+  try {
+    const col = db.collection(tableName);
+    const docs = await col.find({}).toArray();
+
+    if (docs && docs.length > 0) {
+      await execMemSql(`DELETE FROM ${tableName}`);
+      for (const doc of docs) {
+        const clean = { ...doc };
+        delete clean._id;
+        const keys = Object.keys(clean);
+        if (keys.length === 0) continue;
+        const placeholders = keys.map(() => '?').join(', ');
+        const values = keys.map((k) => clean[k]);
+        await execMemSql(
+          `INSERT OR REPLACE INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`,
+          values
+        );
+      }
+      return docs.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn(`[MongoDB] Warning reading collection "${tableName}":`, err.message);
+    return 0;
+  }
+}
+
+/**
+ * Detect which tables are affected by a mutation SQL query
+ */
+function detectAffectedTables(sql) {
+  const affected = new Set();
+  for (const table of KNOWN_TABLES) {
+    const regex = new RegExp(`\\b${table}\\b`, 'i');
+    if (regex.test(sql)) {
+      affected.add(table);
     }
   }
-  return result;
+  return Array.from(affected);
 }
 
 /**
- * Execute SQL Query with Parameters
+ * Execute SQL Query with Parameters, syncing mutations to MongoDB Atlas
  */
 export async function query(sql, params = []) {
-  if (isPg) {
-    const pgSql = convertPlaceholders(sql);
-    const res = await pgPool.query(pgSql, params);
-    return res.rows;
-  } else {
-    return new Promise((resolve, reject) => {
-      const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
-      if (isSelect) {
-        sqliteDb.all(sql, params, (err, rows) => {
-          if (err) return reject(err);
-          resolve(rows || []);
-        });
-      } else {
-        sqliteDb.run(sql, params, function (err) {
-          if (err) return reject(err);
-          resolve({ lastID: this.lastID, changes: this.changes });
-        });
-      }
-    });
+  if (!isInitialized) {
+    await initDb();
   }
+
+  const res = await execMemSql(sql, params);
+
+  // If query modifies data, sync affected table(s) to MongoDB Atlas
+  const isMutation = /^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql);
+  if (isMutation) {
+    const tables = detectAffectedTables(sql);
+    for (const t of tables) {
+      syncTableToMongo(t).catch((err) => {
+        console.error(`[MongoDB] Background sync failed for ${t}:`, err.message);
+      });
+    }
+  }
+
+  return res;
 }
 
 /**
@@ -121,9 +224,20 @@ export async function queryOne(sql, params = []) {
 }
 
 /**
- * Initialize Schema from schema.sql
+ * Initialize Schema and synchronize with MongoDB Atlas
  */
 export async function initDb() {
+  if (isInitialized) return;
+
+  // 1. Establish MongoDB connection
+  await connectMongo();
+
+  // 2. Initialize in-memory execution engine
+  if (!memDb) {
+    memDb = new sqlite3.Database(':memory:');
+  }
+
+  // 3. Load schema DDL
   let sql = schemaSql;
   if (!sql) {
     const schemaPath = path.join(__dirname, 'schema.sql');
@@ -132,18 +246,14 @@ export async function initDb() {
     }
   }
 
-  if (isPg) {
-    await pgPool.query(sql);
-  } else {
-    await new Promise((resolve, reject) => {
-      sqliteDb.exec(sql, (err) => {
-        if (err) return reject(err);
-        resolve(true);
-      });
+  await new Promise((resolve, reject) => {
+    memDb.exec(sql, (err) => {
+      if (err) return reject(err);
+      resolve(true);
     });
-  }
+  });
 
-  // Run auto-migrations for existing databases gracefully
+  // 4. Run auto-migrations gracefully for schema additions
   const migrations = [
     `ALTER TABLE bills ADD COLUMN customer_email TEXT`,
     `ALTER TABLE bills ADD COLUMN customer_address TEXT`,
@@ -178,73 +288,38 @@ export async function initDb() {
   ];
   for (const m of migrations) {
     try {
-      await query(m);
+      await execMemSql(m);
     } catch (e) {
-      // Ignore duplicate column error if column already exists
+      // Ignore if column already exists
     }
   }
 
-  // Ensure business_profile has valid site logo and auto-clean any legacy dummy 1x1 or nonexistent placeholder logos
-  try {
-    await query(
-      `UPDATE business_profile 
-       SET logo_url = '/logo-default.png', logo_original_url = '/logo-default.png' 
-       WHERE logo_url = '/uploads/logo_serverless.png' 
-          OR logo_original_url LIKE '%iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=%'
-          OR (logo_url IS NULL AND logo_original_url IS NULL)`
-    );
-  } catch (e) {}
-
-  // Auto-link legacy unlinked bills to customers or auto-create customer profiles
-  try {
-    const unlinkedBills = await query(
-      `SELECT id, customer_name, customer_phone, customer_email, customer_address, grand_total, received_amount, balance_amount 
-       FROM bills 
-       WHERE customer_id IS NULL AND customer_name IS NOT NULL`
-    );
-    if (unlinkedBills && unlinkedBills.length > 0) {
-      const allCusts = await query('SELECT id, name, phone FROM customers');
-      for (const b of unlinkedBills) {
-        if (!b.customer_name || !b.customer_name.trim()) continue;
-        const bPhone = (b.customer_phone || '').replace(/\D/g, '');
-        let matched = allCusts.find(c => {
-          const cPhone = (decrypt(c.phone) || '').replace(/\D/g, '');
-          return (bPhone && cPhone && bPhone === cPhone) ||
-                 (c.name && b.customer_name.trim().toLowerCase() === c.name.trim().toLowerCase());
-        });
-
-        if (!matched) {
-          const newCustId = `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-          await query(
-            `INSERT INTO customers (id, tenant_id, name, phone, email, address, state_code, gstin, customer_type, notes, loyalty_points, total_spent, outstanding_balance)
-             VALUES (?, 'tenant-memotrix-01', ?, ?, ?, ?, '33', '', 'retail', 'Auto-created from existing bill', 0, ?, ?)`,
-            [
-              newCustId,
-              b.customer_name.trim(),
-              encrypt(bPhone),
-              encrypt(b.customer_email || ''),
-              b.customer_address || '',
-              parseFloat(b.received_amount || 0),
-              parseFloat(b.balance_amount || 0)
-            ]
-          );
-          matched = { id: newCustId, name: b.customer_name.trim(), phone: bPhone };
-          allCusts.push(matched);
-        }
-
-        if (matched) {
-          await query('UPDATE bills SET customer_id = ? WHERE id = ?', [matched.id, b.id]);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[DB] Auto-linking legacy bills warning:', err.message);
+  // 5. Populate in-memory engine from existing MongoDB Atlas collections
+  let totalLoaded = 0;
+  for (const table of KNOWN_TABLES) {
+    const count = await loadTableFromMongo(table);
+    totalLoaded += count;
   }
+
+  if (totalLoaded > 0) {
+    console.log(`[MongoDB] Loaded ${totalLoaded} existing documents from MongoDB Atlas into memory.`);
+  } else {
+    console.log('[MongoDB] Collections empty or initialized fresh on MongoDB Atlas.');
+  }
+
+  isInitialized = true;
 }
 
 export default {
   query,
   queryOne,
   initDb,
-  get isPg() { return isPg; }
+  connectMongo,
+  getMongoDb,
+  isMongoConnected,
+  syncTableToMongo,
+  loadTableFromMongo,
+  mongoose,
+  get isPg() { return false; },
+  get isMongo() { return true; }
 };

@@ -23,7 +23,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction,
   jwtSecret: process.env.JWT_SECRET || (isProduction ? undefined : 'memotrix_dev_jwt_secret_key_2026!'),
-  databaseUrl: process.env.DATABASE_URL,
+  mongodbUri: process.env.MONGODB_URI || 'mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0',
+  mongodbDbName: process.env.MONGODB_DB_NAME || 'memotrix',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(s => s.trim())
