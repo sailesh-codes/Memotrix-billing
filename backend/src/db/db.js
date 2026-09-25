@@ -9,7 +9,7 @@ import config from '../config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri || 'mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri;
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || config.mongodbDbName || 'memotrix';
 
 let mongoConnection = null;
@@ -50,6 +50,12 @@ export const KNOWN_TABLES = [
 export async function connectMongo() {
   if (mongoConnection && mongoose.connection.readyState === 1) {
     return mongoConnection;
+  }
+
+  if (!MONGODB_URI) {
+    const errMsg = '[DB FATAL] MONGODB_URI is not set. Please provide it in your .env file.';
+    console.error(errMsg);
+    throw new Error(errMsg);
   }
 
   console.log('[MongoDB] Connecting to MongoDB Atlas...');

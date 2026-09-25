@@ -15,15 +15,21 @@ try {
   // Ignored in read-only environments
 }
 
-const BACKUP_KEY = process.env.BACKUP_ENCRYPTION_KEY || 'memotrix_backup_secret_key_32b!';
-const KEY = crypto.scryptSync(BACKUP_KEY, 'memotrix_backup_salt', 32);
+function getBackupKey() {
+  const secret = process.env.BACKUP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
+  if (!secret) {
+    throw new Error('[BACKUP FATAL] BACKUP_ENCRYPTION_KEY or ENCRYPTION_KEY must be defined in your .env file.');
+  }
+  return crypto.scryptSync(secret, 'memotrix_backup_salt', 32);
+}
 
 /**
  * Encrypt buffer with AES-256-GCM
  */
 function encryptBuffer(buffer) {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', KEY, iv);
+  const key = getBackupKey();
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, encrypted]);

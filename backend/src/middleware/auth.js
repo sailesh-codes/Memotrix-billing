@@ -3,12 +3,9 @@ import db from '../db/db.js';
 import config from '../config.js';
 
 function getJwtSecret() {
-  const secret = config.jwtSecret || process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET || config.jwtSecret;
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('[AUTH FATAL] JWT_SECRET is required in production environment.');
-    }
-    return 'memotrix_dev_jwt_secret_key_2026!';
+    throw new Error('[AUTH FATAL] JWT_SECRET environment variable must be configured in your .env file.');
   }
   return secret;
 }

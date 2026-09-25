@@ -1,14 +1,21 @@
 import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const SECRET_KEY = process.env.ENCRYPTION_KEY || 'memotrix_secret_key_32bytes_long!'; // 32 chars
-const KEY = crypto.scryptSync(SECRET_KEY, 'memotrix_salt', 32);
+
+function getEncryptionKey() {
+  const secretKey = process.env.ENCRYPTION_KEY;
+  if (!secretKey) {
+    throw new Error('[CRYPTO FATAL] ENCRYPTION_KEY environment variable must be configured in your .env file.');
+  }
+  return crypto.scryptSync(secretKey, 'memotrix_salt', 32);
+}
 
 export function encrypt(text) {
   if (!text) return text;
   try {
+    const key = getEncryptionKey();
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag().toString('hex');
@@ -27,7 +34,8 @@ export function decrypt(cipherText) {
     const iv = Buffer.from(parts[0], 'hex');
     const authTag = Buffer.from(parts[1], 'hex');
     const encryptedText = parts[2];
-    const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
+    const key = getEncryptionKey();
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
     let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
     decrypted += decipher.final('utf8');

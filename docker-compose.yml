@@ -24,11 +24,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      MONGODB_URI: ${MONGODB_URI:-mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0}
+      MONGODB_URI: ${MONGODB_URI}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:-memotrix}
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-memotrix_jwt_secret_key_2026!}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-memotrix_secret_key_32bytes_long!}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       redis:
         condition: service_healthy
