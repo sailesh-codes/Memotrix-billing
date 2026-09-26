@@ -1,20 +1,12 @@
 import mongoose from 'mongoose';
-import sqlite3 from 'sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { schemaSql } from './schemaSql.js';
 import config from '../config.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { parseAndExecuteQuery } from './mongoQueryEngine.js';
 
 const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri;
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || config.mongodbDbName || 'memotrix';
 
 let mongoConnection = null;
 let mongoDb = null;
-let memDb = null;
 let isInitialized = false;
 let reconnectInterval = null;
 
@@ -46,10 +38,11 @@ export const KNOWN_TABLES = [
 ];
 
 /**
- * Establish connection to MongoDB Atlas using Mongoose with resilient retry
+ * Establish resilient connection directly to MongoDB Atlas
  */
 export async function connectMongo(silent = false) {
   if (mongoConnection && mongoose.connection.readyState === 1) {
+    mongoDb = mongoose.connection.db;
     return mongoConnection;
   }
 
@@ -59,7 +52,7 @@ export async function connectMongo(silent = false) {
     throw new Error(errMsg);
   }
 
-  if (!silent) console.log('[MongoDB] Connecting to MongoDB Atlas...');
+  if (!silent) console.log('[MongoDB] Connecting directly to MongoDB Atlas...');
   try {
     mongoConnection = await mongoose.connect(MONGODB_URI, {
       dbName: MONGODB_DB_NAME,
@@ -71,7 +64,7 @@ export async function connectMongo(silent = false) {
 
     mongoDb = mongoose.connection.db;
 
-    console.log(`[MongoDB] Successfully connected to MongoDB Atlas! (Database: ${MONGODB_DB_NAME})`);
+    console.log(`[MongoDB] Successfully connected directly to MongoDB Atlas! (Database: ${MONGODB_DB_NAME})`);
 
     mongoose.connection.on('error', (err) => {
       console.error('[MongoDB] Connection error:', err.message);
@@ -95,12 +88,9 @@ export async function connectMongo(silent = false) {
   } catch (err) {
     if (!silent) {
       console.error('================================================================================');
-      console.error('⚠️  [MongoDB Connection Notice] Could not connect to MongoDB Atlas right now.');
+      console.error('⚠️  [MongoDB Connection Warning] Could not connect to MongoDB Atlas.');
       console.error(`👉 Reason: ${err.message}`);
-      console.error('👉 If Atlas blocked your IP, whitelist 0.0.0.0/0 in MongoDB Atlas:');
-      console.error('   MongoDB Atlas -> Security -> Network Access -> Add IP Address -> Allow Access From Anywhere (0.0.0.0/0)');
-      console.error('⚡ Memotrix is running with local in-memory fallback so login and billing work uninterrupted!');
-      console.error('   Background auto-reconnect will sync data to Atlas once connection succeeds.');
+      console.error('👉 Ensure your IP is whitelisted (0.0.0.0/0) in MongoDB Atlas Network Access.');
       console.error('================================================================================');
     }
     startBackgroundReconnect();
@@ -109,7 +99,7 @@ export async function connectMongo(silent = false) {
 }
 
 /**
- * Background auto-reconnect loop to connect as soon as Atlas IP whitelist is active
+ * Background auto-reconnect loop
  */
 function startBackgroundReconnect() {
   if (process.env.VERCEL || reconnectInterval) return;
@@ -122,10 +112,7 @@ function startBackgroundReconnect() {
     try {
       await connectMongo(true);
       if (isMongoConnected()) {
-        console.log('[MongoDB] Background auto-reconnect to MongoDB Atlas SUCCEEDED! Synchronizing data...');
-        for (const t of KNOWN_TABLES) {
-          await syncTableToMongo(t);
-        }
+        console.log('[MongoDB] Auto-reconnect to MongoDB Atlas SUCCEEDED!');
         clearInterval(reconnectInterval);
         reconnectInterval = null;
       }
@@ -150,134 +137,34 @@ export function isMongoConnected() {
 }
 
 /**
- * Low-level execution on in-memory execution engine
+ * Get a specific collection directly from MongoDB
  */
-function execMemSql(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    if (!memDb) {
-      return reject(new Error('In-memory database engine not initialized'));
-    }
-    const trimmed = sql.trim().toUpperCase();
-    const isSelect = trimmed.startsWith('SELECT') || trimmed.startsWith('PRAGMA');
-    if (isSelect) {
-      memDb.all(sql, params, (err, rows) => {
-        if (err) return reject(err);
-        resolve(rows || []);
-      });
-    } else {
-      memDb.run(sql, params, function (err) {
-        if (err) return reject(err);
-        resolve({ lastID: this.lastID, changes: this.changes });
-      });
-    }
-  });
-}
-
-/**
- * Synchronize all rows of an in-memory table to its corresponding MongoDB collection
- */
-export async function syncTableToMongo(tableName) {
+export function collection(name) {
   const db = getMongoDb();
-  if (!db || !isMongoConnected()) return;
-
-  try {
-    const rows = await execMemSql(`SELECT * FROM ${tableName}`);
-    const col = db.collection(tableName);
-
-    if (rows && rows.length > 0) {
-      const ops = rows.map(r => {
-        const clean = { ...r };
-        delete clean._id;
-        const filter = clean.id ? { id: clean.id } : { ...clean };
-        return {
-          replaceOne: {
-            filter,
-            replacement: clean,
-            upsert: true
-          }
-        };
-      });
-      await col.bulkWrite(ops);
-    }
-  } catch (err) {
-    console.error(`[MongoDB] Error syncing table "${tableName}" to MongoDB Atlas:`, err.message);
+  if (!db) {
+    throw new Error(`[MongoDB] Cannot access collection "${name}": MongoDB is not connected.`);
   }
+  return db.collection(name);
 }
 
 /**
- * Load documents from a MongoDB collection into the in-memory engine table
- */
-export async function loadTableFromMongo(tableName) {
-  const db = getMongoDb();
-  if (!db || !isMongoConnected()) return 0;
-
-  try {
-    const col = db.collection(tableName);
-    const docs = await col.find({}).toArray();
-
-    if (docs && docs.length > 0) {
-      await execMemSql(`DELETE FROM ${tableName}`);
-      for (const doc of docs) {
-        const clean = { ...doc };
-        delete clean._id;
-        const keys = Object.keys(clean);
-        if (keys.length === 0) continue;
-        const placeholders = keys.map(() => '?').join(', ');
-        const values = keys.map((k) => clean[k]);
-        await execMemSql(
-          `INSERT OR REPLACE INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`,
-          values
-        );
-      }
-      return docs.length;
-    }
-    return 0;
-  } catch (err) {
-    return 0;
-  }
-}
-
-/**
- * Detect which tables are affected by a mutation SQL query
- */
-function detectAffectedTables(sql) {
-  const affected = new Set();
-  for (const table of KNOWN_TABLES) {
-    const regex = new RegExp(`\\b${table}\\b`, 'i');
-    if (regex.test(sql)) {
-      affected.add(table);
-    }
-  }
-  return Array.from(affected);
-}
-
-/**
- * Execute SQL Query with Parameters, syncing mutations to MongoDB Atlas
+ * Execute query directly on MongoDB Atlas collections
  */
 export async function query(sql, params = []) {
-  if (!isInitialized) {
+  if (!isInitialized || !isMongoConnected()) {
     await initDb();
   }
 
-  const res = await execMemSql(sql, params);
-
-  const isMutation = /^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql);
-  if (isMutation && isMongoConnected()) {
-    const tables = detectAffectedTables(sql);
-    const syncPromises = tables.map(t => syncTableToMongo(t).catch((err) => {
-      console.error(`[MongoDB] Background sync failed for ${t}:`, err.message);
-    }));
-    // In serverless environments, await sync to prevent lambda freezing before Atlas write completes
-    if (process.env.VERCEL) {
-      await Promise.all(syncPromises);
-    }
+  const db = getMongoDb();
+  if (!db) {
+    throw new Error('[MongoDB] MongoDB Atlas connection is required to execute queries.');
   }
 
-  return res;
+  return parseAndExecuteQuery(db, sql, params);
 }
 
 /**
- * Execute Single SQL Query returning first row
+ * Execute single query returning first document
  */
 export async function queryOne(sql, params = []) {
   const rows = await query(sql, params);
@@ -285,92 +172,37 @@ export async function queryOne(sql, params = []) {
 }
 
 /**
- * Initialize Schema and synchronize with MongoDB Atlas
+ * Initialize MongoDB database connection and ensure essential indexes
  */
 export async function initDb() {
-  if (isInitialized) return;
+  if (isInitialized && isMongoConnected()) return;
 
-  // 1. Initialize in-memory execution engine first so server never crashes on startup
-  if (!memDb) {
-    memDb = new sqlite3.Database(':memory:');
-  }
-
-  // 2. Load schema DDL
-  let sql = schemaSql;
-  if (!sql) {
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    if (fs.existsSync(schemaPath)) {
-      sql = fs.readFileSync(schemaPath, 'utf8');
-    }
-  }
-
-  await new Promise((resolve, reject) => {
-    memDb.exec(sql, (err) => {
-      if (err) return reject(err);
-      resolve(true);
-    });
-  });
-
-  // 3. Run auto-migrations gracefully for schema additions
-  const migrations = [
-    `ALTER TABLE bills ADD COLUMN customer_email TEXT`,
-    `ALTER TABLE bills ADD COLUMN customer_address TEXT`,
-    `ALTER TABLE bills ADD COLUMN customer_gstin TEXT`,
-    `ALTER TABLE bills ADD COLUMN pdf_path TEXT`,
-    `ALTER TABLE bills ADD COLUMN pdf_generated_at TIMESTAMP`,
-    `ALTER TABLE users ADD COLUMN must_reset_password BOOLEAN DEFAULT TRUE`,
-    `ALTER TABLE users ADD COLUMN phone_number TEXT`,
-    `ALTER TABLE users ADD COLUMN phone_verified BOOLEAN DEFAULT FALSE`,
-    `ALTER TABLE users ADD COLUMN phone_locked BOOLEAN DEFAULT FALSE`,
-    `ALTER TABLE users ADD COLUMN failed_login_count INTEGER DEFAULT 0`,
-    `ALTER TABLE users ADD COLUMN locked_until TIMESTAMP`,
-    `ALTER TABLE business_profile ADD COLUMN website TEXT`,
-    `ALTER TABLE business_profile ADD COLUMN payee_name TEXT`,
-    `ALTER TABLE business_profile ADD COLUMN merchant_name TEXT`,
-    `ALTER TABLE business_profile ADD COLUMN currency TEXT DEFAULT 'INR'`,
-    `ALTER TABLE business_profile ADD COLUMN default_transaction_note TEXT`,
-    `ALTER TABLE business_profile ADD COLUMN show_qr_code BOOLEAN DEFAULT TRUE`,
-    `ALTER TABLE business_profile ADD COLUMN show_upi_text BOOLEAN DEFAULT TRUE`,
-    `ALTER TABLE bills ADD COLUMN invoice_type TEXT DEFAULT 'tax_invoice'`,
-    `ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'General'`,
-    `ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0`,
-    `ALTER TABLE products ADD COLUMN image_url TEXT`,
-    `ALTER TABLE products ADD COLUMN barcode TEXT`,
-    `ALTER TABLE customers ADD COLUMN notes TEXT`,
-    `ALTER TABLE customers ADD COLUMN total_spent REAL DEFAULT 0`,
-    `ALTER TABLE customers ADD COLUMN outstanding_balance REAL DEFAULT 0`,
-    `ALTER TABLE business_profile ADD COLUMN logo_original_url TEXT`,
-    `ALTER TABLE business_profile ADD COLUMN logo_zoom REAL DEFAULT 1.0`,
-    `ALTER TABLE business_profile ADD COLUMN logo_x REAL DEFAULT 0.0`,
-    `ALTER TABLE business_profile ADD COLUMN logo_y REAL DEFAULT 0.0`
-  ];
-  for (const m of migrations) {
-    try {
-      await execMemSql(m);
-    } catch (e) {
-      // Ignore if column already exists
-    }
-  }
-
-  // 4. Try to connect to MongoDB Atlas and load existing documents
   try {
     await connectMongo();
-    let totalLoaded = 0;
-    for (const table of KNOWN_TABLES) {
-      const count = await loadTableFromMongo(table);
-      totalLoaded += count;
-    }
-    if (totalLoaded > 0) {
-      console.log(`[MongoDB] Loaded ${totalLoaded} existing documents from MongoDB Atlas into memory.`);
-    } else {
-      console.log('[MongoDB] Collections empty or initialized fresh on MongoDB Atlas.');
-    }
-  } catch (mongoErr) {
-    console.log('[DB] Initialized with local in-memory store. Will auto-sync to Atlas as soon as connection is ready.');
-  }
+    const db = getMongoDb();
 
-  isInitialized = true;
+    // Create useful indexes in background for performance
+    if (db) {
+      db.collection('tenants').createIndex({ id: 1 }, { unique: true }).catch(() => {});
+      db.collection('users').createIndex({ username: 1 }).catch(() => {});
+      db.collection('users').createIndex({ email: 1 }).catch(() => {});
+      db.collection('bills').createIndex({ tenant_id: 1, id: 1 }).catch(() => {});
+      db.collection('bills').createIndex({ tenant_id: 1, bill_number: 1 }).catch(() => {});
+      db.collection('products').createIndex({ tenant_id: 1, id: 1 }).catch(() => {});
+      db.collection('products').createIndex({ tenant_id: 1, sku: 1 }).catch(() => {});
+      db.collection('customers').createIndex({ tenant_id: 1, id: 1 }).catch(() => {});
+    }
+
+    isInitialized = true;
+  } catch (mongoErr) {
+    console.error('[MongoDB Init Error]', mongoErr.message);
+    throw mongoErr;
+  }
 }
+
+// Backward compatibility no-ops (SQLite is completely eliminated)
+export async function syncTableToMongo() { return true; }
+export async function loadTableFromMongo() { return 0; }
 
 export default {
   query,
@@ -379,6 +211,7 @@ export default {
   connectMongo,
   getMongoDb,
   isMongoConnected,
+  collection,
   syncTableToMongo,
   loadTableFromMongo,
   mongoose,

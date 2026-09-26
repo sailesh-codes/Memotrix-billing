@@ -23,14 +23,15 @@ Under **Project Settings -> Environment Variables**, add:
 | Variable | Value / Description | Required |
 |---|---|---|
 | `JWT_SECRET` | Strong secret string (min 32 chars) | **Yes** |
-| `DATABASE_URL` | PostgreSQL connection string (Neon / Supabase / Vercel Postgres) | Recommended for production persistence |
+| `MONGODB_URI` | MongoDB Atlas connection string (`mongodb+srv://...`) | **Yes** (Production database) |
+| `MONGODB_DB_NAME` | Database name (e.g. `memotrix`) | Optional (default: `memotrix`) |
 | `ADMIN_ALERT_EMAIL` | `teammemotrix@gmail.com` | Optional |
 | `SMTP_HOST` | `smtp.gmail.com` | Optional |
 | `SMTP_PORT` | `587` | Optional |
 | `SMTP_USER` | `teammemotrix@gmail.com` | Optional |
 | `SMTP_PASS` | Gmail 16-character App Password | Optional |
 
-> **Note regarding SQLite on Vercel**: Vercel Serverless Functions have an ephemeral `/tmp` filesystem. While SQLite runs out of `/tmp` for quick testing/demo purposes, for production data persistence we recommend attaching a free managed PostgreSQL database (e.g. Neon, Supabase, or Vercel Postgres) by supplying `DATABASE_URL`.
+> **MongoDB Atlas Database Persistence**: Memotrix uses MongoDB Atlas as its single, unified database. All business profiles, invoices, customers, and users are stored directly in MongoDB Atlas collections. Zero local SQL or SQLite files are used. Ensure `0.0.0.0/0` is added to your MongoDB Atlas Network Access whitelist so Vercel serverless functions can connect.
 
 ### 3. Deploy
 Click **Deploy**. Your application will be live at `https://<your-project>.vercel.app`.

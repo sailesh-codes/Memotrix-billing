@@ -6,7 +6,7 @@ Memotrix is a full-stack Product Billing, receipt generator, and business manage
 ```mermaid
 graph TD
     Client["React Frontend (Vite + Tailwind + PWA)"] -->|REST API| Express["Node.js Express Backend"]
-    Express -->|SQLite / PG Driver| DB[("Database")]
+    Express -->|Mongoose / MongoDB Driver| DB[("MongoDB Atlas")]
     Express -->|PDF Renderer| Playwright["Playwright Headless Chrome"]
     Express -->|Cron Scheduler| NodeCron["node-cron Scheduler"]
     Express -->|Email Alerts & Verification| SMTP["Nodemailer (SMTP)"]
@@ -33,11 +33,11 @@ graph TD
 - **Automatic Server-Side Compression**: Uploaded raster images (PNG, JPG, JPEG) up to 25MB are accepted silently.
 - **Max Dimensions**: Automatically resized to a maximum of 1200px on the longest side (preserving aspect ratio and transparency). Vector SVGs pass through untouched.
 
-## Database & Session Storage Architecture (SQLite Decision)
-- **Database Engine**: SQLite (`memotrix.sqlite`) is used for single-tenant, single-admin deployment simplicity.
-- **Tradeoffs & Rationale**: Eliminates external database daemon maintenance (PostgreSQL/MySQL). High-speed local read/write performance.
-- **Encrypted Snapshots**: Automated daily encrypted backups (AES-256-GCM) performed by `backupService.js`, saving snapshots to local disk and optional cloud object storage (S3/GCS).
-- **Session Architecture**: Token-based authentication using JWT. Single active session enforcement is tracked directly in `users.active_session_token` column in SQLite without requiring an external Redis server.
+## Database & Session Storage Architecture (MongoDB Atlas)
+- **Database Engine**: MongoDB Atlas (Cloud Managed MongoDB) with Mongoose / native driver connection.
+- **Pure Document Storage**: All collections (`tenants`, `users`, `products`, `customers`, `bills`, `bill_items`, `business_profile`, etc.) are persisted directly in MongoDB Atlas. Zero SQLite or SQL database engine dependency.
+- **Serverless Resilient**: Stateless serverless functions on Vercel read and write directly to cloud Atlas clusters with built-in connection pooling and automatic reconnect.
+- **Session Architecture**: Token-based authentication using JWT. Single active session enforcement is tracked directly in `users.active_session_token` in MongoDB.
 
 ## PDF Disk Caching & Invalidation Architecture
 - **Single Generation**: On first download request, Playwright generates the PDF once and persists it to `backend/storage/pdfs/${bill_number}.pdf`.

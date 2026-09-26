@@ -71,8 +71,7 @@ router.put('/business-profile', async (req, res) => {
   const {
     business_name, tagline, phone, email, address, state_code, gstin, gst_enabled,
     upi_id, logo_url, logo_original_url, logo_zoom, logo_x, logo_y, website,
-    payee_name, merchant_name, currency, default_transaction_note, show_qr_code, show_upi_text,
-    is_reset
+    payee_name, merchant_name, currency, default_transaction_note, show_qr_code, show_upi_text
   } = req.body;
 
   try {
@@ -81,9 +80,7 @@ router.put('/business-profile', async (req, res) => {
     let finalLogoOriginalUrl = logo_original_url || logo_url;
     let finalLogoUrl = logo_url || logo_original_url;
 
-    const isExplicitReset = is_reset === true || (logo_url === '/logo-default.png' && logo_original_url === '/logo-default.png');
-
-    if (!isExplicitReset && bp) {
+    if (bp) {
       const existingStored = bp.logo_original_url || bp.logo_url;
       if (existingStored && existingStored.startsWith('data:image/')) {
         // If current request doesn't provide a new data:image/ URI, preserve the existing base64 logo
