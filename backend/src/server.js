@@ -38,8 +38,8 @@ if (process.env.SENTRY_DSN) {
 }
 
 configureSecurity(app);
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Lazy DB initialization to safely initialize schema and seed data on serverless cold start
 let isDbReady = false;

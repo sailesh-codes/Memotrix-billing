@@ -187,26 +187,50 @@ export function SettingsPage() {
       return;
     }
 
-    // Immediately read as base64 Data URL for instant, lossless local preview
-    const reader = new FileReader();
-    reader.onload = (readEvt) => {
-      const dataUri = readEvt.target?.result;
-      if (dataUri) {
-        setLogoUrl(dataUri);
-        setLogoOriginalUrl(dataUri);
-      }
-    };
-    reader.readAsDataURL(file);
+    // Convert to base64 Data URL
+    const toDataUrl = (fileObj) =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => resolve(evt.target.result);
+        reader.onerror = () => reject(new Error('Failed to read image file locally.'));
+        reader.readAsDataURL(fileObj);
+      });
 
     setIsUploadingLogo(true);
     showToast('Uploading original high-resolution logo...', 'info');
 
     try {
-      const formData = new FormData();
-      formData.append('logo', file);
+      const dataUri = await toDataUrl(file);
+      setLogoUrl(dataUri);
+      setLogoOriginalUrl(dataUri);
 
-      const res = await settingsApi.uploadLogo(formData);
-      const newLogoUrl = res.data.logoOriginalUrl || res.data.logoUrl || res.data.logo_url;
+      let newLogoUrl = null;
+      try {
+        const formData = new FormData();
+        formData.append('logo', file);
+        const res = await settingsApi.uploadLogo(formData);
+        newLogoUrl = res.data.logoOriginalUrl || res.data.logoUrl || res.data.logo_url || dataUri;
+      } catch (uploadErr) {
+        console.warn('[SETTINGS] Multipart upload failed, saving logo directly via JSON profile update:', uploadErr);
+        // Fallback: save directly via JSON with dataUri to ensure 100% reliability
+        await settingsApi.updateBusinessProfile({
+          business_name: businessName,
+          phone,
+          email,
+          address,
+          state_code: stateCode,
+          gstin,
+          gst_enabled: gstEnabled,
+          upi_id: upiId,
+          website,
+          logo_url: dataUri,
+          logo_original_url: dataUri,
+          logo_zoom: 1.0,
+          logo_x: 0.0,
+          logo_y: 0.0,
+        });
+        newLogoUrl = dataUri;
+      }
 
       if (newLogoUrl) {
         setLogoUrl(newLogoUrl);
@@ -220,6 +244,7 @@ export function SettingsPage() {
       showToast('Logo Updated Successfully.', 'success');
       setIsAdjustModalOpen(true);
     } catch (err) {
+      console.error('[SETTINGS] Logo update error:', err);
       showToast(err.response?.data?.error || err.message || 'Failed to upload logo.', 'error');
     } finally {
       setIsUploadingLogo(false);

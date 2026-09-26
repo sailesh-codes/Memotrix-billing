@@ -17,21 +17,7 @@ router.use(authenticate);
 
 const FIXED_ADMIN_EMAIL = 'teammemotrix@gmail.com';
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = isVercel ? path.join('/tmp', 'uploads') : path.join(backendDir, 'public', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      try {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      } catch (e) {}
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `logo_${Date.now()}${ext}`);
-  }
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -128,17 +114,8 @@ router.put('/business-profile', async (req, res) => {
       );
     }
 
-    // Invalidate cached PDFs on disk and database to ensure fresh invoice downloads reflect the profile & logo
+    // Invalidate cached PDFs in database to ensure fresh invoice downloads reflect the profile & logo
     try {
-      const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
-      if (fs.existsSync(pdfStorageDir)) {
-        const pdfFiles = fs.readdirSync(pdfStorageDir);
-        for (const f of pdfFiles) {
-          if (f.endsWith('.pdf')) {
-            try { fs.unlinkSync(path.join(pdfStorageDir, f)); } catch (e) {}
-          }
-        }
-      }
       await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
     } catch (cacheErr) {}
 
@@ -283,6 +260,41 @@ router.put('/feature-flags', async (req, res) => {
  * Lossless storage of original high-resolution logo (PNG, JPG, SVG, WebP up to 20MB)
  */
 const handleLogoUpload = (req, res) => {
+  const saveLogoData = async (logoDataUri) => {
+    if (!logoDataUri) {
+      return res.status(400).json({ success: false, error: 'No logo file provided. Please select a valid image file.' });
+    }
+
+    try {
+      const existing = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
+      if (!existing) {
+        await db.query(
+          `INSERT INTO business_profile (id, tenant_id, business_name, phone, address, logo_url, logo_original_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', logoDataUri, logoDataUri]
+        );
+      } else {
+        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [logoDataUri, logoDataUri, existing.id]);
+      }
+      
+      // Invalidate PDF cache safely
+      try {
+        await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
+      } catch (cacheErr) {}
+
+      return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl: logoDataUri, logoOriginalUrl: logoDataUri });
+    } catch (dbErr) {
+      console.error('[SETTINGS] Logo save error in DB:', dbErr);
+      return res.status(500).json({ success: false, error: `Failed to save logo: ${dbErr.message || 'Database error'}` });
+    }
+  };
+
+  const isMultipart = req.is('multipart/form-data');
+  if (!isMultipart) {
+    const jsonLogo = req.body?.logo || req.body?.logo_url || req.body?.logo_original_url;
+    return saveLogoData(jsonLogo);
+  }
+
   upload.single('logo')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       return res.status(400).json({ success: false, error: `Upload error: ${err.message}` });
@@ -290,55 +302,16 @@ const handleLogoUpload = (req, res) => {
       return res.status(400).json({ success: false, error: err.message || 'Failed to upload logo' });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: 'No logo file provided. Please select a valid image file.' });
-    }
-
-    try {
+    let logoDataUri = null;
+    if (req.file && req.file.buffer) {
       const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '') || 'png';
       const mimeType = req.file.mimetype || (ext === 'svg' ? 'image/svg+xml' : `image/${ext}`);
-      let logoDataUri = null;
-      try {
-        const fileBuf = fs.readFileSync(req.file.path);
-        logoDataUri = `data:${mimeType};base64,${fileBuf.toString('base64')}`;
-      } catch (readErr) {
-        console.warn('[SETTINGS] Could not read uploaded file to base64:', readErr.message);
-      }
-
-      const finalLogo = logoDataUri || `/uploads/${req.file.filename}`;
-
-      const existing = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
-      if (!existing) {
-        await db.query(
-          `INSERT INTO business_profile (id, tenant_id, business_name, phone, address, logo_url, logo_original_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', finalLogo, finalLogo]
-        );
-      } else {
-        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [finalLogo, finalLogo, existing.id]);
-      }
-      
-      // Invalidate PDF cache on disk & DB safely without blocking upload response
-      try {
-        const pdfStorageDir = isVercel ? path.join('/tmp', 'pdfs') : path.join(backendDir, 'storage', 'pdfs');
-        if (fs.existsSync(pdfStorageDir)) {
-          const pdfFiles = fs.readdirSync(pdfStorageDir);
-          for (const f of pdfFiles) {
-            if (f.endsWith('.pdf')) {
-              try { fs.unlinkSync(path.join(pdfStorageDir, f)); } catch (e) {}
-            }
-          }
-        }
-        await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
-      } catch (cacheErr) {
-        console.warn('[SETTINGS] PDF cache invalidation warning:', cacheErr.message);
-      }
-
-      return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl: finalLogo, logoOriginalUrl: finalLogo });
-    } catch (dbErr) {
-      console.error('[SETTINGS] Logo upload save error:', dbErr);
-      return res.status(500).json({ success: false, error: `Failed to save logo in database: ${dbErr.message || 'Database error'}` });
+      logoDataUri = `data:${mimeType};base64,${req.file.buffer.toString('base64')}`;
+    } else if (req.body && (req.body.logo || req.body.logo_url)) {
+      logoDataUri = req.body.logo || req.body.logo_url;
     }
+
+    return saveLogoData(logoDataUri);
   });
 };
 
