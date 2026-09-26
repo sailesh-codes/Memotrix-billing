@@ -42,12 +42,19 @@ export function Sidebar() {
           <div className="flex items-center space-x-3 px-2 pt-1 pb-2 border-b border-slate-100 dark:border-slate-800">
             <div className="w-[48px] h-[48px] flex items-center justify-center flex-shrink-0">
               <img
-                src={businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png' ? businessProfile.logo_url : '/logo-default.png'}
+                src={
+                  (businessProfile?.logo_original_url && businessProfile.logo_original_url !== '/uploads/logo_serverless.png')
+                    ? businessProfile.logo_original_url
+                    : ((businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png') ? businessProfile.logo_url : '/logo-default.png')
+                }
                 alt="Logo"
                 onError={(e) => {
                   if (!e.target.src.endsWith('/logo-default.png')) {
                     e.target.src = '/logo-default.png';
                   }
+                }}
+                style={{
+                  transform: `translate(${parseFloat(businessProfile?.logo_x || 0) * 0.15}px, ${parseFloat(businessProfile?.logo_y || 0) * 0.15}px) scale(${parseFloat(businessProfile?.logo_zoom || 1.0)})`
                 }}
                 className="max-w-[48px] max-h-[48px] object-contain drop-shadow-sm"
               />

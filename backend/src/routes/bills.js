@@ -646,6 +646,12 @@ router.put('/:id', async (req, res) => {
 
 function getLogoBase64DataUri(logoOriginalUrl, logoUrl) {
   try {
+    if (logoOriginalUrl && logoOriginalUrl.startsWith('data:image/') && logoOriginalUrl.length > 200) {
+      return logoOriginalUrl;
+    }
+    if (logoUrl && logoUrl.startsWith('data:image/') && logoUrl.length > 200) {
+      return logoUrl;
+    }
     return resolveLogoDataUri(logoOriginalUrl, logoUrl);
   } catch (err) {
     console.error('[LOGO BASE64] Failed to resolve logo data URI:', err.message);

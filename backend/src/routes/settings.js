@@ -71,11 +71,35 @@ router.put('/business-profile', async (req, res) => {
   const {
     business_name, tagline, phone, email, address, state_code, gstin, gst_enabled,
     upi_id, logo_url, logo_original_url, logo_zoom, logo_x, logo_y, website,
-    payee_name, merchant_name, currency, default_transaction_note, show_qr_code, show_upi_text
+    payee_name, merchant_name, currency, default_transaction_note, show_qr_code, show_upi_text,
+    is_reset
   } = req.body;
 
   try {
-    const bp = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
+    const bp = await db.queryOne('SELECT * FROM business_profile LIMIT 1');
+
+    let finalLogoOriginalUrl = logo_original_url || logo_url;
+    let finalLogoUrl = logo_url || logo_original_url;
+
+    const isExplicitReset = is_reset === true || (logo_url === '/logo-default.png' && logo_original_url === '/logo-default.png');
+
+    if (!isExplicitReset && bp) {
+      const existingStored = bp.logo_original_url || bp.logo_url;
+      if (existingStored && existingStored.startsWith('data:image/')) {
+        // If current request doesn't provide a new data:image/ URI, preserve the existing base64 logo
+        if (!finalLogoOriginalUrl || !finalLogoOriginalUrl.startsWith('data:image/')) {
+          finalLogoOriginalUrl = existingStored;
+        }
+        if (!finalLogoUrl || !finalLogoUrl.startsWith('data:image/')) {
+          finalLogoUrl = existingStored;
+        }
+      }
+    }
+
+    if (finalLogoOriginalUrl && finalLogoOriginalUrl.startsWith('data:image/')) {
+      finalLogoUrl = finalLogoOriginalUrl;
+    }
+
     if (!bp) {
       await db.query(
         `INSERT INTO business_profile (
@@ -85,7 +109,7 @@ router.put('/business-profile', async (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           'bp-001', 'tenant-memotrix-01', business_name, tagline, phone, email || 'teammemotrix@gmail.com',
-          address, state_code, gstin, gst_enabled ? true : false, upi_id, logo_url, logo_original_url || logo_url,
+          address, state_code, gstin, gst_enabled ? true : false, upi_id, finalLogoUrl, finalLogoOriginalUrl,
           logo_zoom || 1.0, logo_x || 0.0, logo_y || 0.0, website || '', payee_name || business_name,
           merchant_name || '', currency || 'INR', default_transaction_note || '', show_qr_code !== false, show_upi_text !== false
         ]
@@ -100,7 +124,7 @@ router.put('/business-profile', async (req, res) => {
          WHERE id = ?`,
         [
           business_name, tagline, phone, email || 'teammemotrix@gmail.com', address, state_code, gstin,
-          gst_enabled ? true : false, upi_id, logo_url, logo_original_url || logo_url, logo_zoom || 1.0,
+          gst_enabled ? true : false, upi_id, finalLogoUrl, finalLogoOriginalUrl, logo_zoom || 1.0,
           logo_x || 0.0, logo_y || 0.0, website || '', payee_name || business_name, merchant_name || '',
           currency || 'INR', default_transaction_note || '', show_qr_code !== false, show_upi_text !== false, bp.id
         ]
@@ -121,7 +145,7 @@ router.put('/business-profile', async (req, res) => {
       await db.query('UPDATE bills SET pdf_path = NULL, pdf_generated_at = NULL');
     } catch (cacheErr) {}
 
-    return res.json({ message: 'Business profile updated successfully' });
+    return res.json({ message: 'Business profile updated successfully', logo_url: finalLogoUrl });
   } catch (err) {
     console.error('[SETTINGS] Update business profile error:', err);
     res.status(500).json({ error: 'Failed to update business profile' });
@@ -274,7 +298,6 @@ const handleLogoUpload = (req, res) => {
     }
 
     try {
-      const timestamp = Date.now();
       const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '') || 'png';
       const mimeType = req.file.mimetype || (ext === 'svg' ? 'image/svg+xml' : `image/${ext}`);
       let logoDataUri = null;
@@ -285,18 +308,17 @@ const handleLogoUpload = (req, res) => {
         console.warn('[SETTINGS] Could not read uploaded file to base64:', readErr.message);
       }
 
-      const logoUrl = `/uploads/${req.file.filename}?v=${timestamp}`;
-      const originalUrl = logoDataUri || logoUrl;
+      const finalLogo = logoDataUri || `/uploads/${req.file.filename}`;
 
       const existing = await db.queryOne('SELECT id FROM business_profile LIMIT 1');
       if (!existing) {
         await db.query(
           `INSERT INTO business_profile (id, tenant_id, business_name, phone, address, logo_url, logo_original_url)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', logoUrl, originalUrl]
+          ['bp-001', 'tenant-memotrix-01', 'Memotrix', '6384241882', 'Memotrix Studio', finalLogo, finalLogo]
         );
       } else {
-        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [logoUrl, originalUrl, existing.id]);
+        await db.query('UPDATE business_profile SET logo_url = ?, logo_original_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [finalLogo, finalLogo, existing.id]);
       }
       
       // Invalidate PDF cache on disk & DB safely without blocking upload response
@@ -315,7 +337,7 @@ const handleLogoUpload = (req, res) => {
         console.warn('[SETTINGS] PDF cache invalidation warning:', cacheErr.message);
       }
 
-      return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl, logoOriginalUrl: logoUrl });
+      return res.json({ success: true, message: 'Logo Updated Successfully.', logoUrl: finalLogo, logoOriginalUrl: finalLogo });
     } catch (dbErr) {
       console.error('[SETTINGS] Logo upload save error:', dbErr);
       return res.status(500).json({ success: false, error: `Failed to save logo in database: ${dbErr.message || 'Database error'}` });

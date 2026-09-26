@@ -67,7 +67,11 @@ export function LoginForm() {
         <div className="text-center space-y-2">
           <div className="w-[72px] h-[72px] mx-auto flex items-center justify-center">
             <img
-              src={businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png' ? businessProfile.logo_url : '/logo-default.png'}
+              src={
+                (businessProfile?.logo_original_url && businessProfile.logo_original_url !== '/uploads/logo_serverless.png')
+                  ? businessProfile.logo_original_url
+                  : ((businessProfile?.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png') ? businessProfile.logo_url : '/logo-default.png')
+              }
               alt="Memotrix Logo"
               onError={(e) => {
                 if (!e.target.src.endsWith('/logo-default.png')) {

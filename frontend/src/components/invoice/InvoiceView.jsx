@@ -369,17 +369,25 @@ export function InvoiceView({ bill, items = [], businessProfile, templateSetting
           {bp.gstin && <p className="text-xs print:text-[10px] text-slate-600">GSTIN: {bp.gstin}</p>}
           {bp.website && <p className="text-xs print:text-[10px] text-slate-600">Website: {bp.website}</p>}
         </div>
-        <div className="flex items-center justify-end max-w-[160px] max-h-[80px] print:max-w-[120px] print:max-h-[50px]">
+        <div className="flex items-center justify-end max-w-[160px] max-h-[80px] print:max-w-[120px] print:max-h-[50px] overflow-hidden">
           <img
             src={
-              (bp.logo_data_uri && bp.logo_data_uri.length > 200)
-                ? bp.logo_data_uri
-                : ((bp.logo_original_url && bp.logo_original_url.length > 200 && !bp.logo_original_url.includes('AAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='))
-                    ? bp.logo_original_url
-                    : ((bp.logo_url && bp.logo_url !== '/uploads/logo_serverless.png') ? bp.logo_url : '/logo-default.png'))
+              (bp.logo_original_url && bp.logo_original_url.startsWith('data:image/') && bp.logo_original_url.length > 200)
+                ? bp.logo_original_url
+                : ((bp.logo_url && bp.logo_url.startsWith('data:image/') && bp.logo_url.length > 200)
+                    ? bp.logo_url
+                    : ((bp.logo_data_uri && bp.logo_data_uri.length > 200)
+                        ? bp.logo_data_uri
+                        : ((bp.logo_original_url && bp.logo_original_url !== '/uploads/logo_serverless.png')
+                            ? bp.logo_original_url
+                            : ((bp.logo_url && bp.logo_url !== '/uploads/logo_serverless.png') ? bp.logo_url : '/logo-default.png'))))
             }
             alt="Business Logo"
             crossOrigin="anonymous"
+            style={{
+              transform: `translate(${parseFloat(bp.logo_x || 0) * 0.25}px, ${parseFloat(bp.logo_y || 0) * 0.25}px) scale(${parseFloat(bp.logo_zoom || 1.0)})`,
+              transformOrigin: 'right center'
+            }}
             onError={(e) => {
               if (!e.target.src.endsWith('/logo-default.png')) {
                 e.target.src = '/logo-default.png';

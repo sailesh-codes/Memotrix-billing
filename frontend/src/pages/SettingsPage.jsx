@@ -127,9 +127,11 @@ export function SettingsPage() {
       setWebsite(businessProfile.website || '');
       setGstEnabled(!!businessProfile.gst_enabled);
       setUpiId(businessProfile.upi_id || '');
-      const initialLogo = (businessProfile.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png') ? businessProfile.logo_url : '/logo-default.png';
+      const initialLogo = (businessProfile.logo_original_url && businessProfile.logo_original_url !== '/uploads/logo_serverless.png' && businessProfile.logo_original_url !== '/logo-default.png')
+        ? businessProfile.logo_original_url
+        : ((businessProfile.logo_url && businessProfile.logo_url !== '/uploads/logo_serverless.png') ? businessProfile.logo_url : '/logo-default.png');
       setLogoUrl(initialLogo);
-      setLogoOriginalUrl(businessProfile.logo_original_url || initialLogo);
+      setLogoOriginalUrl(initialLogo);
       setPayeeName(businessProfile.payee_name || businessProfile.business_name || 'Memotrix');
       setMerchantName(businessProfile.merchant_name || '');
       setCurrency(businessProfile.currency || 'INR');
@@ -185,6 +187,17 @@ export function SettingsPage() {
       return;
     }
 
+    // Immediately read as base64 Data URL for instant, lossless local preview
+    const reader = new FileReader();
+    reader.onload = (readEvt) => {
+      const dataUri = readEvt.target?.result;
+      if (dataUri) {
+        setLogoUrl(dataUri);
+        setLogoOriginalUrl(dataUri);
+      }
+    };
+    reader.readAsDataURL(file);
+
     setIsUploadingLogo(true);
     showToast('Uploading original high-resolution logo...', 'info');
 
@@ -193,10 +206,12 @@ export function SettingsPage() {
       formData.append('logo', file);
 
       const res = await settingsApi.uploadLogo(formData);
-      const newLogoUrl = res.data.logoUrl || res.data.logoOriginalUrl || res.data.logo_url;
+      const newLogoUrl = res.data.logoOriginalUrl || res.data.logoUrl || res.data.logo_url;
 
-      setLogoUrl(newLogoUrl);
-      setLogoOriginalUrl(newLogoUrl);
+      if (newLogoUrl) {
+        setLogoUrl(newLogoUrl);
+        setLogoOriginalUrl(newLogoUrl);
+      }
       setLogoZoom(1.0);
       setLogoX(0.0);
       setLogoY(0.0);
@@ -241,6 +256,7 @@ export function SettingsPage() {
   const handleSaveLogoSettings = async () => {
     try {
       showToast('Saving logo layout settings...', 'info');
+      const activeLogo = logoOriginalUrl || logoUrl;
       await settingsApi.updateBusinessProfile({
         business_name: businessName,
         phone,
@@ -251,8 +267,8 @@ export function SettingsPage() {
         gst_enabled: gstEnabled,
         upi_id: upiId,
         website,
-        logo_url: logoUrl,
-        logo_original_url: logoOriginalUrl || logoUrl,
+        logo_url: activeLogo,
+        logo_original_url: activeLogo,
         logo_zoom: logoZoom,
         logo_x: logoX,
         logo_y: logoY
@@ -280,10 +296,17 @@ export function SettingsPage() {
         upi_id: upiId,
         website,
         logo_url: '/logo-default.png',
-        logo_original_url: '/logo-default.png'
+        logo_original_url: '/logo-default.png',
+        logo_zoom: 1.0,
+        logo_x: 0.0,
+        logo_y: 0.0,
+        is_reset: true
       });
       setLogoUrl('/logo-default.png');
       setLogoOriginalUrl('/logo-default.png');
+      setLogoZoom(1.0);
+      setLogoX(0.0);
+      setLogoY(0.0);
       await refreshSettings();
       showToast('Logo reset to default Memotrix logo.', 'info');
     } catch (err) {
@@ -295,6 +318,7 @@ export function SettingsPage() {
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     try {
+      const activeLogo = logoOriginalUrl || logoUrl;
       await settingsApi.updateBusinessProfile({
         business_name: businessName,
         phone,
@@ -305,7 +329,11 @@ export function SettingsPage() {
         gst_enabled: gstEnabled,
         upi_id: upiId,
         website,
-        logo_url: logoUrl
+        logo_url: activeLogo,
+        logo_original_url: activeLogo,
+        logo_zoom: logoZoom,
+        logo_x: logoX,
+        logo_y: logoY
       });
       await settingsApi.updateBillTemplate({
         terms_and_conditions: terms,
@@ -622,7 +650,7 @@ export function SettingsPage() {
                 <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800">
                   <div className="w-24 h-24 rounded-2xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center p-2 shadow-md relative overflow-hidden flex-shrink-0">
                     <img
-                      src={logoUrl || '/logo-default.png'}
+                      src={logoOriginalUrl || logoUrl || '/logo-default.png'}
                       alt="Current Business Logo"
                       className="max-h-full max-w-full object-contain"
                     />
