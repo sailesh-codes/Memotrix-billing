@@ -20,12 +20,14 @@ if (!process.env.JWT_SECRET) {
   console.error('[CONFIG WARNING] JWT_SECRET is not set. Add JWT_SECRET in Vercel Dashboard -> Settings -> Environment Variables.');
 }
 
+const DEFAULT_MONGODB_URI = 'mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0';
+
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction,
   jwtSecret: process.env.JWT_SECRET || 'memotrix-super-secret-jwt-key-2026',
-  mongodbUri: process.env.MONGODB_URI,
+  mongodbUri: process.env.MONGODB_URI || DEFAULT_MONGODB_URI,
   mongodbDbName: process.env.MONGODB_DB_NAME || 'memotrix',
   encryptionKey: process.env.ENCRYPTION_KEY || 'memotrix_secret_key_32bytes_long!',
   backupEncryptionKey: process.env.BACKUP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || 'memotrix_secret_key_32bytes_long!',

@@ -6,6 +6,7 @@ export const apiLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   message: { error: 'Too many requests from this IP, please try again after 15 minutes.' }
 });
 
@@ -15,6 +16,7 @@ export const loginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   message: { error: 'Too many login attempts. Account temporarily locked for 15 minutes.' }
 });
 
@@ -60,6 +62,7 @@ export const otpRequestLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   message: { error: 'Too many OTP requests. Please wait 15 minutes before requesting another verification code.' }
 });
 

@@ -166,10 +166,8 @@ app.use((err, req, res, next) => {
   winstonLogger.error('Unhandled Server Error:', { message: err.message, status: err.status });
   if (process.env.SENTRY_DSN) Sentry.captureException(err);
   const statusCode = err.status || err.statusCode || 500;
-  const clientMessage = (statusCode < 500 && err.message)
-    ? err.message
-    : 'Internal Server Error';
-  res.status(statusCode).json({ error: clientMessage });
+  const clientMessage = err.message || 'Internal Server Error';
+  res.status(statusCode).json({ error: clientMessage, status: statusCode });
 });
 
 export async function startServer() {

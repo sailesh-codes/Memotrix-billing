@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import config from '../config.js';
 import { parseAndExecuteQuery } from './mongoQueryEngine.js';
 
-const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri;
+const DEFAULT_MONGODB_URI = 'mongodb+srv://teammemotrix_db_user:3gKfLfcFJG002ecp@cluster0.3mygesv.mongodb.net/memotrix?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI || config.mongodbUri || DEFAULT_MONGODB_URI;
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || config.mongodbDbName || 'memotrix';
 
 let mongoConnection = null;
