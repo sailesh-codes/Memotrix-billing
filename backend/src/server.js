@@ -54,9 +54,8 @@ export async function ensureDatabaseReady() {
         console.log('[DB] Database seeded and ready');
       })
       .catch((err) => {
-        console.error('[DB] Seeding failed:', err);
+        console.warn('[DB] Seeding warning:', err.message);
         dbInitPromise = null;
-        throw err;
       });
   }
   return dbInitPromise;
@@ -65,10 +64,10 @@ export async function ensureDatabaseReady() {
 app.use(async (req, res, next) => {
   try {
     await ensureDatabaseReady();
-    next();
   } catch (err) {
-    next(err);
+    console.warn('[DB] Non-blocking warmup warning:', err.message);
   }
+  next();
 });
 
 const isVercel = !!process.env.VERCEL;

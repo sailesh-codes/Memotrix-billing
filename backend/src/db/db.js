@@ -47,18 +47,15 @@ export async function connectMongo(silent = false) {
     return mongoConnection;
   }
 
-  if (!MONGODB_URI) {
-    const errMsg = '[DB NOTICE] MONGODB_URI is not set. Add MONGODB_URI in Vercel Dashboard -> Settings -> Environment Variables.';
-    if (!silent) console.warn(errMsg);
-    throw new Error(errMsg);
-  }
+  const activeUri = (process.env.MONGODB_URI || config.mongodbUri || DEFAULT_MONGODB_URI || '').trim() || DEFAULT_MONGODB_URI;
+  const activeDbName = (process.env.MONGODB_DB_NAME || config.mongodbDbName || 'memotrix').trim() || 'memotrix';
 
-  if (!silent) console.log('[MongoDB] Connecting directly to MongoDB Atlas...');
+  if (!silent) console.log(`[MongoDB] Connecting directly to MongoDB Atlas (${activeDbName})...`);
   try {
-    mongoConnection = await mongoose.connect(MONGODB_URI, {
-      dbName: MONGODB_DB_NAME,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
+    mongoConnection = await mongoose.connect(activeUri, {
+      dbName: activeDbName,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
       retryWrites: true,
       w: 'majority'
     });
